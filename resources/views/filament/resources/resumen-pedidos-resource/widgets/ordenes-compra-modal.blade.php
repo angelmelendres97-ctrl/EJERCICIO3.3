@@ -1,0 +1,1 @@
+<livewire:resumen-pedidos-detalles :record="$record" />

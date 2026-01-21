@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: multiempresa_app84
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    container_name: multiempresa_web
+    ports:
+      - "8084:80"
+    volumes:
+      - ./:/var/www/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    restart: unless-stopped
