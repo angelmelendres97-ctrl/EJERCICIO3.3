@@ -1065,7 +1065,7 @@ class SolicitudPagoResource extends Resource
             ->recordUrl(null)
             ->recordAction('verFacturas')
             ->columns([
-                TextColumn::make('num')
+                TextColumn::make('id')
                     ->label('Num')
                     ->sortable()
                     ->searchable(),

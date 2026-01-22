@@ -826,7 +826,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->send();
 
         if ($solicitud) {
-            $this->dispatch('open-solicitud-pago-pdf', url: route('solicitud-pago.pdf', $solicitud));
+            //$this->dispatch('open-solicitud-pago-pdf', url: route('solicitud-pago.pdf', $solicitud));
 
             $this->redirect(SolicitudPagoFacturas::getUrl([
                 'record' => $solicitud,

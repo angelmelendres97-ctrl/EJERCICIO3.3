@@ -35,7 +35,7 @@ class EgresoSolicitudPagoResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->recordUrl(null)
             ->columns([
-                TextColumn::make('num')
+                TextColumn::make('id')
                     ->label('Num')
                     ->sortable()
                     ->searchable(),

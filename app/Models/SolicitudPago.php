@@ -11,7 +11,7 @@ class SolicitudPago extends Model
     public const ESTADO_APROBADA_ANULADA = 'SOLICITUD APROBADA ANULADA';
 
     protected $fillable = [
-        'num',
+        'id',
         'id_empresa',
         'fecha',
         'motivo',
@@ -35,14 +35,7 @@ class SolicitudPago extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (self $model) {
-            if ($model->num) {
-                return;
-            }
 
-            $currentMax = DB::table('solicitud_pagos')->lockForUpdate()->max('num');
-            $model->num = ($currentMax ?? 0) + 1;
-        });
 
         static::updating(function (self $model) {
             $estadoOriginal = strtoupper((string) $model->getOriginal('estado'));
