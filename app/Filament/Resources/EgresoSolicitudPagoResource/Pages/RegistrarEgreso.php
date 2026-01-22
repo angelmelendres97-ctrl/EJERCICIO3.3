@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EgresoSolicitudPagoResource\Pages;
 use App\Filament\Resources\EgresoSolicitudPagoResource;
 use App\Filament\Resources\SolicitudPagoResource;
 use App\Models\SolicitudPago;
+use App\Models\SolicitudPagoAsiento;
 use App\Models\SolicitudPagoDetalle;
 use Filament\Actions\Action;
 use Filament\Actions\StaticAction;
@@ -27,10 +28,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Str;
 
 class RegistrarEgreso extends Page implements HasTable
 {
@@ -1110,16 +1109,6 @@ class RegistrarEgreso extends Page implements HasTable
                         try {
                             $reportContext = $this->registrarEgresoContable();
                             $this->record->update(['estado' => SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
-                            $token = (string) Str::uuid();
-
-                        Cache::put(
-                            $this->buildReportCacheKey($token),
-                            [
-                                'solicitud_id' => $this->record->getKey(),
-                                'contexts' => $reportContext,
-                            ],
-                            now()->addMinutes(10)
-                        );
 
                         Notification::make()
                             ->title('Egreso registrado')
@@ -1127,9 +1116,7 @@ class RegistrarEgreso extends Page implements HasTable
                             ->success()
                             ->send();
 
-                        $this->dispatchBrowserEvent('egreso-reporte', [
-                            'url' => route('egresos.solicitud-pago.reporte', ['token' => $token]),
-                        ]);
+                        $this->persistAsientosRegistrados($reportContext);
 
                         $this->redirect(EgresoSolicitudPagoResource::getUrl());
                     } catch (\Throwable $exception) {
@@ -1460,6 +1447,7 @@ class RegistrarEgreso extends Page implements HasTable
                 ]);
 
             return [
+                'conexion' => $context['conexion'] ?? null,
                 'connection' => $connection,
                 'empresa' => $empresa,
                 'sucursal' => $sucursal,
@@ -1470,9 +1458,25 @@ class RegistrarEgreso extends Page implements HasTable
         });
     }
 
-    protected function buildReportCacheKey(string $token): string
+    protected function persistAsientosRegistrados(array $reportContext): void
     {
-        return 'egreso_report_' . $token;
+        $this->record->asientos()->delete();
+
+        foreach ($reportContext as $context) {
+            if (! isset($context['conexion'], $context['empresa'], $context['sucursal'], $context['ejercicio'], $context['periodo'], $context['asto_cod_asto'])) {
+                continue;
+            }
+
+            SolicitudPagoAsiento::create([
+                'solicitud_pago_id' => $this->record->getKey(),
+                'conexion' => (string) $context['conexion'],
+                'empresa_id' => (string) $context['empresa'],
+                'sucursal_codigo' => (string) $context['sucursal'],
+                'ejercicio' => (string) $context['ejercicio'],
+                'periodo' => (int) $context['periodo'],
+                'asto_cod_asto' => (string) $context['asto_cod_asto'],
+            ]);
+        }
     }
 
     protected function incrementarSecuencia(?string $secuencia): string
