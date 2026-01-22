@@ -27,10 +27,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Str;
 
 class RegistrarEgreso extends Page implements HasTable
 {
@@ -1108,28 +1106,14 @@ class RegistrarEgreso extends Page implements HasTable
                     ->visible(fn() => strtoupper((string) $this->record->estado) === 'APROBADA')
                     ->action(function (): void {
                         try {
-                            $reportContext = $this->registrarEgresoContable();
+                            $this->registrarEgresoContable();
                             $this->record->update(['estado' => SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
-                            $token = (string) Str::uuid();
-
-                        Cache::put(
-                            $this->buildReportCacheKey($token),
-                            [
-                                'solicitud_id' => $this->record->getKey(),
-                                'contexts' => $reportContext,
-                            ],
-                            now()->addMinutes(10)
-                        );
 
                         Notification::make()
                             ->title('Egreso registrado')
                             ->body('El egreso quedó registrado en las tablas contables.')
                             ->success()
                             ->send();
-
-                        $this->dispatchBrowserEvent('egreso-reporte', [
-                            'url' => route('egresos.solicitud-pago.reporte', ['token' => $token]),
-                        ]);
 
                         $this->redirect(EgresoSolicitudPagoResource::getUrl());
                     } catch (\Throwable $exception) {
@@ -1468,11 +1452,6 @@ class RegistrarEgreso extends Page implements HasTable
                 'asto_cod_asto' => $secuAsto,
             ];
         });
-    }
-
-    protected function buildReportCacheKey(string $token): string
-    {
-        return 'egreso_report_' . $token;
     }
 
     protected function incrementarSecuencia(?string $secuencia): string

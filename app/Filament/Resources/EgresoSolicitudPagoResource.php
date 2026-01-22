@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\EgresoSolicitudPagoResource\Pages;
 use App\Models\SolicitudPago;
+use App\Services\EgresoSolicitudPagoReportService;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
@@ -94,9 +95,11 @@ class EgresoSolicitudPagoResource extends Resource
                     ->color('info')
                     ->modalHeading('Detalle de egreso')
                     ->modalContent(function (SolicitudPago $record): \Illuminate\Contracts\View\View {
+                        $reportes = app(EgresoSolicitudPagoReportService::class)->buildReporte($record);
+
                         return view('filament.resources.egreso-solicitud-pago-resource.actions.detalle-egreso', [
                             'solicitud' => $record,
-                            'detalles' => $record->detalles,
+                            'reportes' => $reportes,
                         ]);
                     })
                     ->modalSubmitAction(false)
