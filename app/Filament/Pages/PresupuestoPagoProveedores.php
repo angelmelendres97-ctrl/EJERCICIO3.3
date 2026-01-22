@@ -680,7 +680,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
     {
         return [
             Action::make('createSolicitudPago')
-                ->label('Crear Solicitud de Pago')
+                ->label('Crear Solicitud y abonar')
                 ->icon('heroicon-o-document-plus')
                 ->color('primary')
                 ->modalWidth('lg')
