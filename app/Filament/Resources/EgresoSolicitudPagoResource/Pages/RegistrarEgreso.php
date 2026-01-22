@@ -139,7 +139,7 @@ class RegistrarEgreso extends Page implements HasTable
         return $motivo !== '' ? $motivo : 'Pago factura ' . ($detalle->numero_factura ?? '');
     }
 
-    
+
 
 
     protected function calculateMontos(
@@ -233,8 +233,26 @@ class RegistrarEgreso extends Page implements HasTable
                 Tables\Actions\Action::make('generarDirectorio')
                     ->label('Generar Directorio y Diario')
                     ->icon('heroicon-o-document-text')
+                    ->color('primary')
+                    ->button()
+                    ->size('sm')
                     ->modalHeading(fn(SolicitudPagoDetalle $record) => 'Generar Directorio y Diario - ' . ($record->proveedor_nombre ?? 'Proveedor'))
                     ->form(fn(SolicitudPagoDetalle $record) => $this->getDirectorioFormSchema($record))
+                    ->modalSubmitAction(false)
+                    ->modalCancelAction(fn(StaticAction $action) => $action->label('Cancelar'))
+
+                    // BOTÓN PRINCIPAL DEL MODAL
+                    ->modalFooterActions(fn(Tables\Actions\Action $action): array => [
+                        $action->getModalCancelAction(),
+
+                        StaticAction::make('generar')
+                            ->label('Generar')
+                            ->icon('heroicon-o-check-circle')
+                            ->color('primary')
+                            ->button()
+                            ->action(fn() => $action->call()), // ejecuta la action principal con el form data
+                    ])
+
                     ->action(function (SolicitudPagoDetalle $record, array $data): void {
                         $this->registrarDirectorioYDiario($record, $data);
 
@@ -247,10 +265,9 @@ class RegistrarEgreso extends Page implements HasTable
                     ->visible(function (SolicitudPagoDetalle $record): bool {
                         $key = $this->buildProviderKeyFromValues($record->proveedor_codigo, $record->proveedor_ruc);
                         return $this->getProviderSaldoPendiente($key) > 0;
-                    })
-                    ->modalSubmitAction(false)
-                    ->modalCancelAction(fn(StaticAction $action) => $action->label('Cancelar')),
+                    }),
             ])
+
             ->actionsColumnLabel('Acciones');
     }
 
