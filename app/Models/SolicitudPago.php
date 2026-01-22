@@ -94,6 +94,11 @@ class SolicitudPago extends Model
         return $this->hasMany(SolicitudPagoAdjunto::class);
     }
 
+    public function asientos()
+    {
+        return $this->hasMany(SolicitudPagoAsiento::class);
+    }
+
     public function creadoPor()
     {
         return $this->belongsTo(User::class, 'creado_por_id');
