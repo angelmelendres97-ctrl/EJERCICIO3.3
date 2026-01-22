@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SolicitudPago extends Model
 {
+    public const ESTADO_APROBADA_ANULADA = 'SOLICITUD APROBADA ANULADA';
+
     protected $fillable = [
         'id_empresa',
         'fecha',
@@ -32,13 +34,24 @@ class SolicitudPago extends Model
     protected static function booted(): void
     {
         static::updating(function (self $model) {
-            if (strtoupper((string) $model->getOriginal('estado')) === 'APROBADA') {
+            $estadoOriginal = strtoupper((string) $model->getOriginal('estado'));
+            $estadoNuevo = strtoupper((string) $model->estado);
+            $estadoAnuladaAprobada = strtoupper(self::ESTADO_APROBADA_ANULADA);
+
+            if ($estadoOriginal === 'APROBADA' && $estadoNuevo === $estadoAnuladaAprobada) {
+                return;
+            }
+
+            if (in_array($estadoOriginal, ['APROBADA', $estadoAnuladaAprobada], true)) {
                 throw new \RuntimeException('La solicitud aprobada no puede modificarse.');
             }
         });
 
         static::deleting(function (self $model) {
-            if (strtoupper((string) $model->estado) === 'APROBADA') {
+            $estado = strtoupper((string) $model->estado);
+            $estadoAnuladaAprobada = strtoupper(self::ESTADO_APROBADA_ANULADA);
+
+            if (in_array($estado, ['APROBADA', $estadoAnuladaAprobada], true)) {
                 throw new \RuntimeException('La solicitud aprobada no puede eliminarse.');
             }
         });

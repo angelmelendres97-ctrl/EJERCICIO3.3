@@ -37,6 +37,32 @@ class SolicitudPagoReportService
         }, $this->buildPdfFilename($solicitud));
     }
 
+    public function streamPdf(SolicitudPago $solicitud): StreamedResponse
+    {
+        $solicitud->loadMissing('detalles');
+
+        $facturas = $this->buildFacturaRowsFromSolicitud($solicitud);
+        [$facturasNormales, $compras] = $this->splitFacturas($facturas);
+
+        $proveedores = $this->getProvidersWithMetadata($facturasNormales);
+        $empresas = $this->buildEmpresasParaReportes($proveedores);
+        $resumen = $this->buildResumenPorEmpresaDesdeFacturas(array_merge($facturasNormales, $compras));
+        $totales = $this->buildTotalesDesdeFacturas(array_merge($facturasNormales, $compras));
+        $comprasReport = $this->buildComprasReportRows($compras);
+        $descripcion = $this->buildDescripcionReporte($solicitud);
+
+        return Pdf::loadView('pdfs.solicitud-pago-facturas-general', [
+            'empresas' => $empresas,
+            'resumenEmpresas' => $resumen,
+            'usuario' => Auth::user()?->name,
+            'totales' => $totales,
+            'descripcionReporte' => $descripcion,
+            'compras' => $comprasReport,
+        ])
+            ->setPaper('a4', 'landscape')
+            ->stream($this->buildPdfFilename($solicitud), ['Attachment' => false]);
+    }
+
     public function exportExcel(SolicitudPago $solicitud): StreamedResponse
     {
         $solicitud->loadMissing('detalles');

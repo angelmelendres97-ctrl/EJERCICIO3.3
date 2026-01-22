@@ -1,3 +1,14 @@
+@push('scripts')
+    <script>
+        window.addEventListener('open-solicitud-pago-pdf', (event) => {
+            const url = event?.detail?.url;
+            if (url) {
+                window.open(url, '_blank');
+            }
+        });
+    </script>
+@endpush
+
 <x-filament-panels::page>
     <div class="space-y-6">
         {{ $this->form }}

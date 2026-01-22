@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Pages\SolicitudPagoFacturas;
 use App\Filament\Resources\SolicitudPagoResource;
 use App\Models\Empresa;
 use App\Models\SolicitudPago;
@@ -780,8 +781,18 @@ class PresupuestoPagoProveedores extends Page implements HasForms
 
         $empresasSeleccionadas = $this->groupOptionsByConnection($this->filters['empresas'] ?? []);
         $sucursalesSeleccionadas = $this->groupOptionsByConnection($this->filters['sucursales'] ?? []);
+        $solicitud = null;
 
-        DB::transaction(function () use ($conexion, $empresasSeleccionadas, $sucursalesSeleccionadas, $selected, $montoEstimado, $montoAprobado, $data) {
+        DB::transaction(function () use (
+            $conexion,
+            $empresasSeleccionadas,
+            $sucursalesSeleccionadas,
+            $selected,
+            $montoEstimado,
+            $montoAprobado,
+            $data,
+            &$solicitud
+        ) {
             $solicitud = SolicitudPago::create([
                 'id_empresa' => $conexion,
                 'fecha' => Carbon::now(),
@@ -813,6 +824,17 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->body('La solicitud se generó con los datos del presupuesto seleccionado.')
             ->success()
             ->send();
+
+        if ($solicitud) {
+            $this->dispatch('open-solicitud-pago-pdf', url: route('solicitud-pago.pdf', $solicitud));
+
+            $this->redirect(SolicitudPagoFacturas::getUrl([
+                'record' => $solicitud,
+                'mode' => 'edit',
+            ]));
+
+            return;
+        }
 
         $this->redirect(SolicitudPagoResource::getUrl());
     }

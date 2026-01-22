@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SolicitudPagoResource\Pages;
 
 use App\Filament\Resources\SolicitudPagoResource;
 use App\Filament\Pages\PresupuestoPagoProveedores;
+use App\Models\SolicitudPago;
 use Filament\Actions;
 use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
@@ -37,9 +38,9 @@ class ListSolicitudPagos extends ListRecords
 
             'aprobada' => Tab::make('Aprobada y enviada')
                 ->icon('heroicon-o-check-circle')
-                ->badge(fn() => $model::where('estado', 'APROBADA')->count())
+                ->badge(fn() => $model::whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_APROBADA_ANULADA])->count())
                 ->badgeColor('success')
-                ->modifyQueryUsing(fn(Builder $query) => $query->where('estado', 'APROBADA')),
+                ->modifyQueryUsing(fn(Builder $query) => $query->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_APROBADA_ANULADA])),
 
             'anulada' => Tab::make('Anulada')
                 ->icon('heroicon-o-x-circle')

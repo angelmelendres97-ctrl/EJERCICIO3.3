@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\SolicitudPago;
 
 class SolicitudPagoContexto extends Model
 {
@@ -26,7 +27,10 @@ class SolicitudPagoContexto extends Model
     protected static function booted(): void
     {
         $guard = function (self $model) {
-            if ($model->solicitudPago && strtoupper((string) $model->solicitudPago->estado) === 'APROBADA') {
+            $estado = strtoupper((string) $model->solicitudPago?->estado);
+            $estadoAnuladaAprobada = strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA);
+
+            if ($estado && in_array($estado, ['APROBADA', $estadoAnuladaAprobada], true)) {
                 throw new \RuntimeException('No se pueden modificar contextos de una solicitud aprobada.');
             }
         };

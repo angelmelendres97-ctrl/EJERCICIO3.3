@@ -52,6 +52,11 @@ class SolicitudPagoResource extends Resource
 
     protected static ?string $navigationGroup = 'Solicitudes de Pago y Aprobaciones';
 
+    public static function isEstadoAprobado(?string $estado): bool
+    {
+        return in_array(strtoupper((string) $estado), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA)], true);
+    }
+
     public static function getExternalConnectionName(int $empresaId): ?string
     {
         $empresa = Empresa::find($empresaId);
@@ -1107,9 +1112,19 @@ class SolicitudPagoResource extends Resource
 
                 TextColumn::make('estado')
                     ->badge()
+                    ->formatStateUsing(function (string $state): string {
+                        return match (strtoupper($state)) {
+                            'APROBADA' => 'Aprobada',
+                            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'Solicitud Aprobada Anulada',
+                            'ANULADA' => 'Anulada',
+                            'BORRADOR' => 'Borrador',
+                            default => $state,
+                        };
+                    })
                     ->color(fn(string $state) => match (strtoupper($state)) {
                         'BORRADOR' => 'warning',
                         'APROBADA' => 'success',
+                        strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'danger',
                         'ANULADA' => 'danger',
                         default => 'gray',
                     })
@@ -1170,7 +1185,7 @@ class SolicitudPagoResource extends Resource
                         ->form([
                             Repeater::make('adjuntos')
                                 ->label('Archivos adjuntos')
-                                ->disabled(fn(SolicitudPago $record) => strtoupper($record->estado ?? '') === 'APROBADA')
+                                ->disabled(fn(SolicitudPago $record) => self::isEstadoAprobado($record->estado ?? ''))
                                 ->defaultItems(count(self::ADJUNTOS_REQUERIDOS))
                                 ->minItems(count(self::ADJUNTOS_REQUERIDOS))
                                 ->maxItems(5)
@@ -1182,7 +1197,7 @@ class SolicitudPagoResource extends Resource
                                         ->required()
                                         ->dehydrated()
                                         ->disabled(function (SolicitudPago $record, Component $component): bool {
-                                            if (strtoupper($record->estado ?? '') === 'APROBADA') {
+                                            if (self::isEstadoAprobado($record->estado ?? '')) {
                                                 return true;
                                             }
 
@@ -1196,7 +1211,7 @@ class SolicitudPagoResource extends Resource
                                         ->directory('solicitud-pagos/adjuntos')
                                         ->preserveFilenames()
                                         ->required(function (SolicitudPago $record, Component $component): bool {
-                                            if (strtoupper($record->estado ?? '') === 'APROBADA') {
+                                            if (self::isEstadoAprobado($record->estado ?? '')) {
                                                 return false;
                                             }
 
@@ -1205,12 +1220,12 @@ class SolicitudPagoResource extends Resource
                                         // ✅ Que se pueda abrir/descargar siempre (ver)
                                         ->downloadable()
                                         ->openable()
-                                        ->disabled(fn(SolicitudPago $record) => strtoupper($record->estado ?? '') === 'APROBADA'),
+                                        ->disabled(fn(SolicitudPago $record) => self::isEstadoAprobado($record->estado ?? '')),
                                 ])
                                 // ✅ No permitir agregar items en aprobada
-                                ->addable(fn(SolicitudPago $record) => strtoupper($record->estado ?? '') !== 'APROBADA')
+                                ->addable(fn(SolicitudPago $record) => ! self::isEstadoAprobado($record->estado ?? ''))
                                 // ✅ No permitir borrar/reordenar en aprobada
-                                ->deletable(fn(SolicitudPago $record) => strtoupper($record->estado ?? '') !== 'APROBADA')
+                                ->deletable(fn(SolicitudPago $record) => ! self::isEstadoAprobado($record->estado ?? ''))
                                 ->reorderable(false)
                                 ->createItemButtonLabel('Agregar adjunto')
                                 ->columns(1),
@@ -1247,7 +1262,7 @@ class SolicitudPagoResource extends Resource
 
                         // ✅ Evita guardar si está aprobada
                         ->action(function (SolicitudPago $record, array $data) {
-                            if (strtoupper($record->estado ?? '') === 'APROBADA') {
+                            if (self::isEstadoAprobado($record->estado ?? '')) {
                                 return; // solo lectura
                             }
 
@@ -1318,7 +1333,7 @@ class SolicitudPagoResource extends Resource
 
                         // ✅ Si está aprobada, no mostrar botón Guardar, solo “Cerrar”
                         ->modalSubmitAction(function (StaticAction $action, SolicitudPago $record) {
-                            if (strtoupper($record->estado ?? '') === 'APROBADA') {
+                            if (self::isEstadoAprobado($record->estado ?? '')) {
                                 return $action->hidden();
                             }
 
@@ -1330,13 +1345,13 @@ class SolicitudPagoResource extends Resource
                         ->label('Solicitud PDF')
                         ->icon('heroicon-o-document-arrow-down')
                         ->color('danger')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA), 'BORRADOR', 'PENDIENTE'], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportPdf($record)),
                     Tables\Actions\Action::make('descargarPdfDetallado')
                         ->label('Solicitud PDF Detallado')
                         ->icon('heroicon-o-document-magnifying-glass')
                         ->color('danger')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA), 'BORRADOR', 'PENDIENTE'], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedPdf($record)),
 
                    /*  Tables\Actions\Action::make('descargarExcel')
