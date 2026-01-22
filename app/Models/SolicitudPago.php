@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 class SolicitudPago extends Model
 {
     public const ESTADO_APROBADA_ANULADA = 'SOLICITUD APROBADA ANULADA';
+    public const ESTADO_SOLICITUD_COMPLETADA = 'SOLICITUD COMPLETADA';
 
     protected $fillable = [
         'id',
@@ -41,12 +42,13 @@ class SolicitudPago extends Model
             $estadoOriginal = strtoupper((string) $model->getOriginal('estado'));
             $estadoNuevo = strtoupper((string) $model->estado);
             $estadoAnuladaAprobada = strtoupper(self::ESTADO_APROBADA_ANULADA);
+            $estadoCompletada = strtoupper(self::ESTADO_SOLICITUD_COMPLETADA);
 
-            if ($estadoOriginal === 'APROBADA' && $estadoNuevo === $estadoAnuladaAprobada) {
+            if ($estadoOriginal === 'APROBADA' && in_array($estadoNuevo, [$estadoAnuladaAprobada, $estadoCompletada], true)) {
                 return;
             }
 
-            if (in_array($estadoOriginal, ['APROBADA', $estadoAnuladaAprobada], true)) {
+            if (in_array($estadoOriginal, ['APROBADA', $estadoAnuladaAprobada, $estadoCompletada], true)) {
                 throw new \RuntimeException('La solicitud aprobada no puede modificarse.');
             }
         });
@@ -54,8 +56,9 @@ class SolicitudPago extends Model
         static::deleting(function (self $model) {
             $estado = strtoupper((string) $model->estado);
             $estadoAnuladaAprobada = strtoupper(self::ESTADO_APROBADA_ANULADA);
+            $estadoCompletada = strtoupper(self::ESTADO_SOLICITUD_COMPLETADA);
 
-            if (in_array($estado, ['APROBADA', $estadoAnuladaAprobada], true)) {
+            if (in_array($estado, ['APROBADA', $estadoAnuladaAprobada, $estadoCompletada], true)) {
                 throw new \RuntimeException('La solicitud aprobada no puede eliminarse.');
             }
         });

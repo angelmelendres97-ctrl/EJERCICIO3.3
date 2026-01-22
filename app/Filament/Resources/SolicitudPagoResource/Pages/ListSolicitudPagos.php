@@ -38,9 +38,17 @@ class ListSolicitudPagos extends ListRecords
 
             'aprobada' => Tab::make('Aprobada y enviada')
                 ->icon('heroicon-o-check-circle')
-                ->badge(fn() => $model::whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_APROBADA_ANULADA])->count())
+                ->badge(fn() => $model::whereIn('estado', [
+                    'APROBADA',
+                    SolicitudPago::ESTADO_APROBADA_ANULADA,
+                    SolicitudPago::ESTADO_SOLICITUD_COMPLETADA,
+                ])->count())
                 ->badgeColor('success')
-                ->modifyQueryUsing(fn(Builder $query) => $query->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_APROBADA_ANULADA])),
+                ->modifyQueryUsing(fn(Builder $query) => $query->whereIn('estado', [
+                    'APROBADA',
+                    SolicitudPago::ESTADO_APROBADA_ANULADA,
+                    SolicitudPago::ESTADO_SOLICITUD_COMPLETADA,
+                ])),
 
             'anulada' => Tab::make('Anulada')
                 ->icon('heroicon-o-x-circle')

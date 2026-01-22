@@ -29,8 +29,9 @@ class SolicitudPagoContexto extends Model
         $guard = function (self $model) {
             $estado = strtoupper((string) $model->solicitudPago?->estado);
             $estadoAnuladaAprobada = strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA);
+            $estadoCompletada = strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA);
 
-            if ($estado && in_array($estado, ['APROBADA', $estadoAnuladaAprobada], true)) {
+            if ($estado && in_array($estado, ['APROBADA', $estadoAnuladaAprobada, $estadoCompletada], true)) {
                 throw new \RuntimeException('No se pueden modificar contextos de una solicitud aprobada.');
             }
         };

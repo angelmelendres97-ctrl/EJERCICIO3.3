@@ -1105,12 +1105,12 @@ class RegistrarEgreso extends Page implements HasTable
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
                 ->disabled(fn() => $this->totalDiferencia !== 0.0 || empty($this->diarioEntries))
-                ->visible(fn() => strtoupper((string) $this->record->estado) === 'APROBADA')
-                ->action(function (): void {
-                    try {
-                        $reportContext = $this->registrarEgresoContable();
-                        $this->record->update(['estado' => 'FINALIZADO']);
-                        $token = (string) Str::uuid();
+                    ->visible(fn() => strtoupper((string) $this->record->estado) === 'APROBADA')
+                    ->action(function (): void {
+                        try {
+                            $reportContext = $this->registrarEgresoContable();
+                            $this->record->update(['estado' => SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
+                            $token = (string) Str::uuid();
 
                         Cache::put(
                             $this->buildReportCacheKey($token),

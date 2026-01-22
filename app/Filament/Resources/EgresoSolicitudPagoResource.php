@@ -10,6 +10,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use App\Services\SolicitudPagoReportService;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Actions\StaticAction;
 
 class EgresoSolicitudPagoResource extends Resource
 {
@@ -26,7 +27,10 @@ class EgresoSolicitudPagoResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->whereRaw('upper(estado) in (?, ?)', ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA)]);
+            ->whereRaw(
+                'upper(estado) in (?, ?, ?)',
+                ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA), strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA)]
+            );
     }
 
     public static function table(Table $table): Table
@@ -62,13 +66,15 @@ class EgresoSolicitudPagoResource extends Resource
                         return match (strtoupper($state)) {
                             'APROBADA' => 'Aprobada y pendiente de egreso',
                             strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'Solicitud Aprobada Anulada',
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'Solicitud Completada',
                             default => $state,
                         };
                     })
                     ->color(fn(string $state) => match (strtoupper($state)) {
                         'APROBADA' => 'warning',
                         strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'danger',
-                        default => 'success',
+                        strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'success',
+                        default => 'gray',
                     })
                     ->label('Estado'),
             ])
@@ -80,6 +86,22 @@ class EgresoSolicitudPagoResource extends Resource
                     ->url(fn(SolicitudPago $record) => self::getUrl('registrar', ['record' => $record]))
                     ->openUrlInNewTab()
                     ->visible(fn(SolicitudPago $record) => strtoupper((string) $record->estado) === 'APROBADA')
+                    ->button()
+                    ->size('sm'),
+                Tables\Actions\Action::make('detalleEgreso')
+                    ->label('Detalle de egreso')
+                    ->icon('heroicon-o-eye')
+                    ->color('info')
+                    ->modalHeading('Detalle de egreso')
+                    ->modalContent(function (SolicitudPago $record): \Illuminate\Contracts\View\View {
+                        return view('filament.resources.egreso-solicitud-pago-resource.actions.detalle-egreso', [
+                            'solicitud' => $record,
+                            'detalles' => $record->detalles,
+                        ]);
+                    })
+                    ->modalSubmitAction(false)
+                    ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar'))
+                    ->visible(fn(SolicitudPago $record) => strtoupper((string) $record->estado) === strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA))
                     ->button()
                     ->size('sm'),
 

@@ -90,10 +90,11 @@
 
             @php
                 $estadoSolicitud = strtoupper($this->solicitud->estado ?? '');
-                $estadoLabel =
-                    $estadoSolicitud === 'APROBADA'
-                        ? 'Aprobada y pendiente de egreso'
-                        : $this->solicitud->estado ?? 'N/D';
+                $estadoLabel = match ($estadoSolicitud) {
+                    'APROBADA' => 'Aprobada y pendiente de egreso',
+                    strtoupper(\App\Models\SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'Solicitud Completada',
+                    default => $this->solicitud->estado ?? 'N/D',
+                };
 
                 // Colores (solo clases)
                 $estadoClass = $estadoSolicitud === 'APROBADA' ? 'text-amber-700' : 'text-emerald-700';
