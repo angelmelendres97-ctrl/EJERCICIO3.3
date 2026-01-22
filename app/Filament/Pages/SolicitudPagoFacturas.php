@@ -868,7 +868,12 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     protected function isSolicitudAprobada(): bool
     {
-        return $this->solicitud !== null && strtoupper((string) $this->solicitud->estado) === 'APROBADA';
+        return $this->solicitud !== null
+            && in_array(
+                strtoupper((string) $this->solicitud->estado),
+                ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA)],
+                true
+            );
     }
 
     protected function mapContextosDesdeSeleccion(array $empresasSeleccionadas, array $sucursalesSeleccionadas): array
