@@ -4,12 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class SolicitudPago extends Model
 {
     public const ESTADO_APROBADA_ANULADA = 'SOLICITUD APROBADA ANULADA';
 
     protected $fillable = [
+        'id',
         'id_empresa',
         'fecha',
         'motivo',
@@ -33,6 +35,8 @@ class SolicitudPago extends Model
 
     protected static function booted(): void
     {
+
+
         static::updating(function (self $model) {
             $estadoOriginal = strtoupper((string) $model->getOriginal('estado'));
             $estadoNuevo = strtoupper((string) $model->estado);

@@ -1065,6 +1065,10 @@ class SolicitudPagoResource extends Resource
             ->recordUrl(null)
             ->recordAction('verFacturas')
             ->columns([
+                TextColumn::make('id')
+                    ->label('Num')
+                    ->sortable()
+                    ->searchable(),
                 // OCULTA POR DEFECTO (se puede activar)
                 TextColumn::make('empresa.nombre_empresa')
                     ->label('Conexión')
