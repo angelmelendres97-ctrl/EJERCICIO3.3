@@ -6,6 +6,7 @@ use App\Filament\Resources\SolicitudPagoResource;
 use App\Models\Empresa;
 use App\Models\SolicitudPago;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -37,7 +38,7 @@ class SolicitudPagoReportService
         }, $this->buildPdfFilename($solicitud));
     }
 
-    public function streamPdf(SolicitudPago $solicitud): StreamedResponse
+    public function streamPdf(SolicitudPago $solicitud): Response
     {
         $solicitud->loadMissing('detalles');
 
