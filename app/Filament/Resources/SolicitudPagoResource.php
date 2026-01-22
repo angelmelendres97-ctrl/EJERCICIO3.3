@@ -54,7 +54,11 @@ class SolicitudPagoResource extends Resource
 
     public static function isEstadoAprobado(?string $estado): bool
     {
-        return in_array(strtoupper((string) $estado), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA)], true);
+        return in_array(strtoupper((string) $estado), [
+            'APROBADA',
+            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA),
+            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
+        ], true);
     }
 
     public static function getExternalConnectionName(int $empresaId): ?string
@@ -1120,6 +1124,7 @@ class SolicitudPagoResource extends Resource
                         return match (strtoupper($state)) {
                             'APROBADA' => 'Aprobada',
                             strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'Solicitud Aprobada Anulada',
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'Aprobada',
                             'ANULADA' => 'Anulada',
                             'BORRADOR' => 'Borrador',
                             default => $state,
@@ -1129,6 +1134,7 @@ class SolicitudPagoResource extends Resource
                         'BORRADOR' => 'warning',
                         'APROBADA' => 'success',
                         strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'danger',
+                        strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'success',
                         'ANULADA' => 'danger',
                         default => 'gray',
                     })
@@ -1349,26 +1355,48 @@ class SolicitudPagoResource extends Resource
                         ->label('Solicitud PDF')
                         ->icon('heroicon-o-document-arrow-down')
                         ->color('danger')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA), 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
+                            'APROBADA',
+                            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA),
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
+                            'BORRADOR',
+                            'PENDIENTE',
+                        ], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportPdf($record)),
                     Tables\Actions\Action::make('descargarPdfDetallado')
                         ->label('Solicitud PDF Detallado')
                         ->icon('heroicon-o-document-magnifying-glass')
                         ->color('danger')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA), 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
+                            'APROBADA',
+                            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA),
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
+                            'BORRADOR',
+                            'PENDIENTE',
+                        ], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedPdf($record)),
 
                    /*  Tables\Actions\Action::make('descargarExcel')
                         ->label('Solicitud EXCEL')
                         ->icon('heroicon-o-table-cells')
                         ->color('success')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
+                            'APROBADA',
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
+                            'BORRADOR',
+                            'PENDIENTE',
+                        ], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportExcel($record)),
                     Tables\Actions\Action::make('descargarExcelDetallado')
                         ->label('Solicitud EXCEL Detallado')
                         ->icon('heroicon-o-table-cells')
                         ->color('success')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), ['APROBADA', 'BORRADOR', 'PENDIENTE'], true))
+                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
+                            'APROBADA',
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
+                            'BORRADOR',
+                            'PENDIENTE',
+                        ], true))
                         ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedExcel($record)), */
 
                     Tables\Actions\Action::make('gestionar')
