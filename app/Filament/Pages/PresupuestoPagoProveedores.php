@@ -863,6 +863,8 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                             'proveedor_ruc' => (string) ($proveedor['proveedor_ruc'] ?? ''),
                             'proveedor_codigo' => $proveedor['proveedor_codigo'] ?? ($proveedor['proveedor_codigos'][0] ?? null),
                             'proveedor_nombre' => $proveedor['proveedor_nombre'] ?? '',
+                            'area' => $proveedor['area'] ?? null,
+                            'descripcion' => $proveedor['descripcion'] ?? null,
                             'numero_factura' => $factura['numero'] ?? '',
                             'fecha_emision' => $factura['fecha_emision'] ?? null,
                             'fecha_vencimiento' => $factura['fecha_vencimiento'] ?? null,

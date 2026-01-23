@@ -17,6 +17,8 @@ class SolicitudPagoDetalle extends Model
         'proveedor_ruc',
         'proveedor_codigo',
         'proveedor_nombre',
+        'area',
+        'descripcion',
         'numero_factura',
         'fecha_emision',
         'fecha_vencimiento',
