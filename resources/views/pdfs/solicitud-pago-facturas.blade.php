@@ -92,11 +92,12 @@
     <table>
         <thead>
             <tr>
-                <th style="width: 33%">Proveedor</th>
-                <th style="width: 33%">Descripción</th>
+                <th style="width: 25%">Proveedor</th>
+                <th style="width: 25%">Descripción</th>
+                <th style="width: 15%">Área</th>
                 <th style="width: 12%" class="text-right">Valor</th>
                 <th style="width: 11%" class="text-right">Abono</th>
-                <th style="width: 11%" class="text-right">Saldo pendiente</th>
+                <th style="width: 12%" class="text-right">Saldo pendiente</th>
             </tr>
         </thead>
         <tbody>
@@ -104,13 +105,14 @@
                 <tr>
                     <td>{{ $row['proveedor'] }}</td>
                     <td>{{ $row['descripcion'] }}</td>
+                    <td>{{ $row['area'] ?? '' }}</td>
                     <td class="text-right">${{ number_format((float) ($row['valor'] ?? 0), 2, '.', ',') }}</td>
                     <td class="text-right">${{ number_format((float) ($row['abono'] ?? 0), 2, '.', ',') }}</td>
                     <td class="text-right">${{ number_format((float) ($row['saldo'] ?? 0), 2, '.', ',') }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="5" class="text-center">No existen facturas seleccionadas.</td>
+                    <td colspan="6" class="text-center">No existen facturas seleccionadas.</td>
                 </tr>
             @endforelse
         </tbody>

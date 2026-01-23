@@ -52,6 +52,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     public array $providerDescriptions = [];
 
+    public array $providerAreas = [];
+
     public ?SolicitudPago $solicitud = null;
 
     public array $compraForm = [
@@ -819,6 +821,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
                 $abono = (float) ($factura['abono'] ?? $factura['saldo'] ?? 0);
                 $saldo = (float) ($factura['saldo'] ?? 0);
                 $total = (float) ($factura['total'] ?? $factura['monto'] ?? $saldo);
+                $providerKey = $factura['proveedor_key'] ?? null;
                 $erpClave = $factura['key'] ?? $this->buildFacturaKey(
                     (string) ($factura['conexion_id'] ?? $conexion),
                     (string) ($factura['empresa_codigo'] ?? ''),
@@ -837,6 +840,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
                     'proveedor_ruc' => (string) ($factura['proveedor_ruc'] ?? ''),
                     'proveedor_codigo' => $factura['proveedor_codigo'] ?? null,
                     'proveedor_nombre' => $factura['proveedor_nombre'] ?? '',
+                    'area' => $this->providerAreas[$providerKey] ?? ($factura['area'] ?? null),
+                    'descripcion' => $this->providerDescriptions[$providerKey] ?? ($factura['descripcion'] ?? null),
                     'numero_factura' => $factura['numero'] ?? '',
                     'fecha_emision' => $factura['fecha_emision'] ?? null,
                     'fecha_vencimiento' => $factura['fecha_vencimiento'] ?? null,
@@ -958,6 +963,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
                                 'abono' => $abono,
                                 'saldo_pendiente' => max(0, (float) ($factura['saldo'] ?? 0) - $abono),
                                 'descripcion' => $this->providerDescriptions[$providerKey] ?? '',
+                                'area' => $this->providerAreas[$providerKey] ?? ($proveedor['area'] ?? ''),
                             ]);
                         });
                     });
@@ -1301,6 +1307,7 @@ $this->dispatch('refresh-resumen');
             ->map(fn(array $proveedor) => [
                 'proveedor' => $proveedor['proveedor_nombre'] ?? $proveedor['proveedor_codigo'] ?? '',
                 'descripcion' => $proveedor['descripcion'] ?? '',
+                'area' => $proveedor['area'] ?? '',
                 'valor' => (float) ($proveedor['totales']['valor'] ?? 0),
                 'abono' => (float) ($proveedor['totales']['abono'] ?? 0),
                 'saldo' => (float) ($proveedor['totales']['saldo'] ?? 0),
@@ -1332,6 +1339,7 @@ $this->dispatch('refresh-resumen');
                     'proveedor_ruc' => $factura['proveedor_ruc'] ?? null,
                     'proveedor_actividad' => $factura['proveedor_actividad'] ?? null,
                     'descripcion' => $factura['descripcion'] ?? '',
+                    'area' => $factura['area'] ?? '',
                     'totales' => [
                         'valor' => 0,
                         'abono' => 0,
@@ -1439,6 +1447,7 @@ $this->dispatch('refresh-resumen');
                     'nombre' => $proveedor['proveedor_nombre'] ?? $proveedor['proveedor_codigo'],
                     'ruc' => $proveedor['proveedor_ruc'] ?? '',
                     'descripcion' => $proveedor['descripcion'] ?? '',
+                    'area' => $proveedor['area'] ?? '',
                     'totales' => $empresa['totales'] ?? ['valor' => 0, 'abono' => 0, 'saldo' => 0],
                     'sucursales' => $empresa['sucursales'] ?? [],
                 ];
@@ -1538,6 +1547,7 @@ $this->dispatch('refresh-resumen');
                         'Proveedor' => $proveedor['nombre'] ?? '',
                         'RUC' => $proveedor['ruc'] ?? '',
                         'Descripcion' => $proveedor['descripcion'] ?? '',
+                        'Area' => $proveedor['area'] ?? '',
                         'Valor' => number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ''),
                         'Abono' => number_format((float) ($proveedor['totales']['abono'] ?? 0), 2, '.', ''),
                         'Saldo pendiente' => number_format((float) ($proveedor['totales']['saldo'] ?? 0), 2, '.', ''),
@@ -1556,6 +1566,7 @@ $this->dispatch('refresh-resumen');
                 'Proveedor' => 'Proveedor',
                 'RUC' => 'RUC',
                 'Descripcion' => 'Descripcion',
+                'Area' => 'Area',
                 'Valor' => 'Valor',
                 'Abono' => 'Abono',
                 'Saldo pendiente' => 'Saldo pendiente',
@@ -1622,6 +1633,7 @@ $this->dispatch('refresh-resumen');
                                 'Proveedor' => $proveedor['nombre'] ?? '',
                                 'RUC' => $proveedor['ruc'] ?? '',
                                 'Descripcion' => $proveedor['descripcion'] ?? '',
+                                'Area' => $proveedor['area'] ?? '',
                                 'Factura' => $factura['numero'] ?? '',
                                 'Fecha Emision' => $factura['fecha_emision'] ?? '',
                                 'Fecha Vencimiento' => $factura['fecha_vencimiento'] ?? '',
@@ -1646,6 +1658,7 @@ $this->dispatch('refresh-resumen');
                 'Proveedor' => 'Proveedor',
                 'RUC' => 'RUC',
                 'Descripcion' => 'Descripcion',
+                'Area' => 'Area',
                 'Factura' => 'Factura',
                 'Fecha Emision' => 'Fecha Emision',
                 'Fecha Vencimiento' => 'Fecha Vencimiento',
@@ -1990,6 +2003,8 @@ $this->dispatch('refresh-resumen');
                     'proveedor_nombre' => $row['proveedor_nombre'] ?? null,
                     'proveedor_ruc' => $row['proveedor_ruc'] ?? null,
                     'proveedor_actividad' => $row['proveedor_actividad'] ?? null,
+                    'area' => $row['area'] ?? null,
+                    'descripcion' => $row['descripcion'] ?? null,
                     'total' => 0,
                     'facturas_count' => 0,
                     'es_compra' => $esCompra,
@@ -1997,6 +2012,14 @@ $this->dispatch('refresh-resumen');
                 ];
             } elseif ($esCompra) {
                 $agrupado[$proveedorKey]['es_compra'] = true;
+            }
+
+            if (empty($agrupado[$proveedorKey]['area']) && ! empty($row['area'])) {
+                $agrupado[$proveedorKey]['area'] = $row['area'];
+            }
+
+            if (empty($agrupado[$proveedorKey]['descripcion']) && ! empty($row['descripcion'])) {
+                $agrupado[$proveedorKey]['descripcion'] = $row['descripcion'];
             }
 
             if (! isset($agrupado[$proveedorKey]['empresas'][$empresaKey])) {
@@ -2074,12 +2097,16 @@ $this->dispatch('refresh-resumen');
     protected function syncProviderMetadata(array $proveedores): void
     {
         $existingDescriptions = $this->providerDescriptions;
+        $existingAreas = $this->providerAreas;
         $this->providerDescriptions = [];
+        $this->providerAreas = [];
 
         foreach ($proveedores as $proveedor) {
             $key = $proveedor['key'];
             $this->providerDescriptions[$key] = $existingDescriptions[$key]
-                ?? ($proveedor['proveedor_actividad'] ?? ($proveedor['proveedor_nombre'] ?? ''));
+                ?? ($proveedor['descripcion'] ?? ($proveedor['proveedor_actividad'] ?? ($proveedor['proveedor_nombre'] ?? '')));
+            $this->providerAreas[$key] = $existingAreas[$key]
+                ?? ($proveedor['area'] ?? '');
         }
     }
 
@@ -2224,6 +2251,8 @@ $this->dispatch('refresh-resumen');
                 'proveedor_codigo' => $detalle->proveedor_codigo ?? '',
                 'proveedor_nombre' => $detalle->proveedor_nombre ?? ($detalle->proveedor_codigo ?? ''),
                 'proveedor_ruc' => $detalle->proveedor_ruc,
+                'area' => $detalle->area ?? null,
+                'descripcion' => $detalle->descripcion ?? null,
 
                 'numero' => $numeroFactura,
                 'fecha_emision' => $detalle->fecha_emision,

@@ -217,6 +217,7 @@
                         @endif
                     </div>
                     <div class="provider-meta">Descripción: {{ $proveedor['descripcion'] ?: 'Sin descripción' }}</div>
+                    <div class="provider-meta">Área: {{ $proveedor['area'] ?: 'Sin área' }}</div>
                     <div class="provider-meta">
                         Totales · Valor:
                         ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }} ·

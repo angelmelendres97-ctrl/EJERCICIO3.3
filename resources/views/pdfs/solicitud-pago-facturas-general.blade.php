@@ -209,11 +209,12 @@
         <table>
             <thead>
                 <tr>
-                    <th style="width: 33%">Proveedor</th>
-                    <th style="width: 33%">Descripción</th>
+                    <th style="width: 25%">Proveedor</th>
+                    <th style="width: 25%">Descripción</th>
+                    <th style="width: 15%">Área</th>
                     <th style="width: 12%" class="text-right">Valor</th>
                     <th style="width: 11%" class="text-right abono-col">Abono</th>
-                    <th style="width: 11%" class="text-right">Saldo pendiente</th>
+                    <th style="width: 12%" class="text-right">Saldo pendiente</th>
                 </tr>
             </thead>
             <tbody>
@@ -226,6 +227,7 @@
                             @endif
                         </td>
                         <td>{{ $proveedor['descripcion'] }}</td>
+                        <td>{{ $proveedor['area'] ?? '' }}</td>
                         <td class="text-right">
                             ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }}
                         </td>
@@ -238,13 +240,13 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="text-center">No existen proveedores seleccionados.</td>
+                        <td colspan="6" class="text-center">No existen proveedores seleccionados.</td>
                     </tr>
                 @endforelse
 
                 <!-- SUBTOTAL EMPRESA -->
                 <tr>
-                    <td colspan="2" class="text-right" style="font-weight:700; background:#e5e7eb">
+                    <td colspan="3" class="text-right" style="font-weight:700; background:#e5e7eb">
                         SUBTOTAL EMPRESA
                     </td>
                     <td class="text-right" style="font-weight:700; background:#e5e7eb">

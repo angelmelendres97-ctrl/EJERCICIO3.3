@@ -128,7 +128,7 @@
 
                 <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                     @php
-                        $columnsCount = $allowSelection ? 6 : 5;
+                        $columnsCount = $allowSelection ? 7 : 6;
                     @endphp
 
                     <div class="overflow-x-auto">
@@ -146,6 +146,7 @@
                                         </button>
                                     </th>
                                     <th class="px-4 py-2 text-left font-semibold text-gray-700">Descripción</th>
+                                    <th class="px-4 py-2 text-left font-semibold text-gray-700">Área</th>
                                     <th class="px-4 py-2 text-right font-semibold text-gray-700">
                                         <button type="button" wire:click="sortBy('total')"
                                             class="flex items-center gap-1 float-right">
@@ -198,6 +199,9 @@
                                                 wire:model.live.debounce.500ms="providerDescriptions.{{ $proveedor['key'] }}"
                                                 placeholder="Descripción del proveedor"
                                                 class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500" />
+                                        </td>
+                                        <td class="px-4 py-3 text-sm text-gray-700">
+                                            {{ $this->providerAreas[$proveedor['key']] ?? ($proveedor['area'] ?? '—') }}
                                         </td>
                                         <td class="px-4 py-3 text-right font-semibold text-gray-800">
                                             ${{ number_format((float) ($proveedor['total'] ?? 0), 2, '.', ',') }}</td>
