@@ -61,6 +61,21 @@ class SolicitudPagoResource extends Resource
         ], true);
     }
 
+    public static function getRepeaterItemIndex(Component $component): ?int
+    {
+        $statePath = $component->getContainer()?->getStatePath();
+
+        if (! $statePath) {
+            return null;
+        }
+
+        if (preg_match('/\.(\d+)(?:\.|$)/', $statePath, $matches) !== 1) {
+            return null;
+        }
+
+        return (int) $matches[1];
+    }
+
     public static function getExternalConnectionName(int $empresaId): ?string
     {
         $empresa = Empresa::find($empresaId);
@@ -1211,7 +1226,9 @@ class SolicitudPagoResource extends Resource
                                                 return true;
                                             }
 
-                                            return $component->getContainer()->getIndex() < count(self::ADJUNTOS_REQUERIDOS);
+                                            $index = self::getRepeaterItemIndex($component);
+
+                                            return $index !== null && $index < count(self::ADJUNTOS_REQUERIDOS);
                                         }),
 
                                     FileUpload::make('archivo')
@@ -1225,7 +1242,9 @@ class SolicitudPagoResource extends Resource
                                                 return false;
                                             }
 
-                                            return $component->getContainer()->getIndex() < count(self::ADJUNTOS_REQUERIDOS);
+                                            $index = self::getRepeaterItemIndex($component);
+
+                                            return $index !== null && $index < count(self::ADJUNTOS_REQUERIDOS);
                                         })
                                         // ✅ Que se pueda abrir/descargar siempre (ver)
                                         ->downloadable()

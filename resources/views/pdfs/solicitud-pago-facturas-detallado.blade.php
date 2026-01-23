@@ -7,11 +7,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solicitud de pago de facturas - Detallado</title>
     <style>
+        @page {
+            margin: 20px 24px 120px 24px;
+        }
+
         body {
-            font-family: 'DejaVu Sans', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 12px;
             color: #1f2937;
             position: relative;
+            padding-bottom: 120px;
         }
 
         h1 {
@@ -100,7 +105,11 @@
         }
 
         .signatures-wrap {
-            margin-top: 80px;
+            position: fixed;
+            bottom: 24px;
+            left: 0;
+            right: 0;
+            margin-top: 0;
         }
 
         .signatures-table {
