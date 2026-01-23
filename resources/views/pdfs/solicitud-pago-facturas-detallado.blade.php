@@ -8,7 +8,7 @@
     <title>Solicitud de pago de facturas - Detallado</title>
     <style>
         @page {
-            margin: 20px 24px 120px 24px;
+            margin: 20px 24px 24px 24px;
         }
 
         body {
@@ -16,7 +16,18 @@
             font-size: 12px;
             color: #1f2937;
             position: relative;
-            padding-bottom: 120px;
+            margin: 0;
+            padding: 10px;
+        }
+
+        .page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content {
+            flex: 1 0 auto;
         }
 
         h1 {
@@ -105,11 +116,8 @@
         }
 
         .signatures-wrap {
-            position: fixed;
-            bottom: 24px;
-            left: 0;
-            right: 0;
-            margin-top: 0;
+            margin-top: 30px;
+            page-break-inside: avoid;
         }
 
         .signatures-table {
@@ -179,6 +187,8 @@
 </head>
 
 <body>
+    <div class="page">
+        <div class="content">
     <img src="{{ public_path('images/LOGOADMG.png') }}" alt="Logo ADMG" class="logo">
     <h1>GRUPO EMPRESARIAL ADMG</h1>
     <h2>REPORTE DETALLADO DE SOLICITUD DE PAGO DE FACTURAS</h2>
@@ -421,6 +431,7 @@
             </tr>
         </tbody>
     </table>
+        </div>
 
     <div class="signatures-wrap">
         <table class="signatures-table">
@@ -450,6 +461,7 @@
                 </td>
             </tr>
         </table>
+    </div>
     </div>
 </body>
 
