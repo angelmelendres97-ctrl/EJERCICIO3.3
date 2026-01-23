@@ -16,7 +16,12 @@
             font-size: 12px;
             color: #1f2937;
             position: relative;
-            padding-bottom: 120px;
+        }
+
+        .page {
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
         }
 
         h1 {
@@ -105,11 +110,9 @@
         }
 
         .signatures-wrap {
-            position: fixed;
-            bottom: 24px;
-            left: 0;
-            right: 0;
-            margin-top: 0;
+            margin-top: auto;
+            padding-top: 60px;
+            page-break-inside: avoid;
         }
 
         .signatures-table {
@@ -179,277 +182,279 @@
 </head>
 
 <body>
-    <img src="{{ public_path('images/LOGOADMG.png') }}" alt="Logo ADMG" class="logo">
-    <h1>GRUPO EMPRESARIAL ADMG</h1>
-    <h2>REPORTE DETALLADO DE SOLICITUD DE PAGO DE FACTURAS</h2>
-    <h3>{{ $descripcionReporte }}</h3>
-    <p class="subtitle">Elaborado por: {{ $usuario ?? 'N/D' }}</p>
+    <div class="page">
+        <img src="{{ public_path('images/LOGOADMG.png') }}" alt="Logo ADMG" class="logo">
+        <h1>GRUPO EMPRESARIAL ADMG</h1>
+        <h2>REPORTE DETALLADO DE SOLICITUD DE PAGO DE FACTURAS</h2>
+        <h3>{{ $descripcionReporte }}</h3>
+        <p class="subtitle">Elaborado por: {{ $usuario ?? 'N/D' }}</p>
 
-    @php
-        /**
-         * (3) Subtotales y totales con empresas + compras
-         * Sumamos:
-         *  - Total empresas (acumulado de subtotales empresa)
-         *  - Total compras (si existen)
-         *  - Gran total final = empresas + compras
-         *  - Valor a pagar = suma de abonos (empresas + compras)
-         */
-        $totalEmpresasValor = 0;
-        $totalEmpresasAbono = 0;
-        $totalEmpresasSaldo = 0;
-
-        $totalComprasValor = 0;
-        $totalComprasAbono = 0;
-        $totalComprasSaldo = 0;
-    @endphp
-
-    @forelse ($empresas as $empresa)
         @php
-            $empresaValor = (float) ($empresa['totales']['valor'] ?? 0);
-            $empresaAbono = (float) ($empresa['totales']['abono'] ?? 0);
-            $empresaSaldo = (float) ($empresa['totales']['saldo'] ?? 0);
+            /**
+             * (3) Subtotales y totales con empresas + compras
+             * Sumamos:
+             *  - Total empresas (acumulado de subtotales empresa)
+             *  - Total compras (si existen)
+             *  - Gran total final = empresas + compras
+             *  - Valor a pagar = suma de abonos (empresas + compras)
+             */
+            $totalEmpresasValor = 0;
+            $totalEmpresasAbono = 0;
+            $totalEmpresasSaldo = 0;
 
-            $totalEmpresasValor += $empresaValor;
-            $totalEmpresasAbono += $empresaAbono;
-            $totalEmpresasSaldo += $empresaSaldo;
+            $totalComprasValor = 0;
+            $totalComprasAbono = 0;
+            $totalComprasSaldo = 0;
         @endphp
 
-        <div class="section-title">{{ $empresa['conexion_nombre'] }} - {{ $empresa['empresa_nombre'] }}</div>
+        @forelse ($empresas as $empresa)
+            @php
+                $empresaValor = (float) ($empresa['totales']['valor'] ?? 0);
+                $empresaAbono = (float) ($empresa['totales']['abono'] ?? 0);
+                $empresaSaldo = (float) ($empresa['totales']['saldo'] ?? 0);
 
-        @forelse ($empresa['proveedores'] as $proveedor)
-            <div class="provider-box">
-                <div class="provider-header">
-                    <div>
-                        {{ $proveedor['nombre'] }}
-                        @if (!empty($proveedor['ruc']))
-                            <span class="provider-meta">· RUC: {{ $proveedor['ruc'] }}</span>
-                        @endif
+                $totalEmpresasValor += $empresaValor;
+                $totalEmpresasAbono += $empresaAbono;
+                $totalEmpresasSaldo += $empresaSaldo;
+            @endphp
+
+            <div class="section-title">{{ $empresa['conexion_nombre'] }} - {{ $empresa['empresa_nombre'] }}</div>
+
+            @forelse ($empresa['proveedores'] as $proveedor)
+                <div class="provider-box">
+                    <div class="provider-header">
+                        <div>
+                            {{ $proveedor['nombre'] }}
+                            @if (!empty($proveedor['ruc']))
+                                <span class="provider-meta">· RUC: {{ $proveedor['ruc'] }}</span>
+                            @endif
+                        </div>
+                        <div class="provider-meta">Descripción: {{ $proveedor['descripcion'] ?: 'Sin descripción' }}</div>
+                        <div class="provider-meta">Área: {{ $proveedor['area'] ?: 'Sin área' }}</div>
+                        <div class="provider-meta">
+                            Totales · Valor:
+                            ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }} ·
+                            Abono: ${{ number_format((float) ($proveedor['totales']['abono'] ?? 0), 2, '.', ',') }} ·
+                            Saldo: ${{ number_format((float) ($proveedor['totales']['saldo'] ?? 0), 2, '.', ',') }}
+                        </div>
                     </div>
-                    <div class="provider-meta">Descripción: {{ $proveedor['descripcion'] ?: 'Sin descripción' }}</div>
-                    <div class="provider-meta">Área: {{ $proveedor['area'] ?: 'Sin área' }}</div>
-                    <div class="provider-meta">
-                        Totales · Valor:
-                        ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }} ·
-                        Abono: ${{ number_format((float) ($proveedor['totales']['abono'] ?? 0), 2, '.', ',') }} ·
-                        Saldo: ${{ number_format((float) ($proveedor['totales']['saldo'] ?? 0), 2, '.', ',') }}
-                    </div>
-                </div>
 
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 20%">Sucursal</th>
-                            <th style="width: 20%">Factura</th>
-                            <th style="width: 20%">Emisión</th>
-                            <!-- (1) Se quita Vencimiento -->
-                            <th style="width: 20%" class="text-right">Valor</th>
-                            <th style="width: 20%" class="text-right">Abono / Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @php
-                            $facturasProveedor = 0;
-                        @endphp
-                        @foreach ($proveedor['sucursales'] ?? [] as $sucursal)
-                            @foreach ($sucursal['facturas'] ?? [] as $factura)
-                                @php $facturasProveedor++; @endphp
-                                <tr>
-                                    <td>{{ $sucursal['sucursal_nombre'] ?? $sucursal['sucursal_codigo'] }}</td>
-                                    <td>{{ $factura['numero'] }}</td>
-                                    <td>{{ $factura['fecha_emision'] }}</td>
-                                    <td class="text-right">
-                                        ${{ number_format((float) ($factura['valor'] ?? 0), 2, '.', ',') }}</td>
-                                    <td class="text-right">
-                                        ${{ number_format((float) ($factura['abono'] ?? 0), 2, '.', ',') }}<br>
-                                        <span style="font-size:11px; color:#4b5563">Saldo:
-                                            ${{ number_format((float) ($factura['saldo'] ?? 0), 2, '.', ',') }}</span>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        @endforeach
-
-                        @if ($facturasProveedor === 0)
+                    <table>
+                        <thead>
                             <tr>
-                                <td colspan="5" class="text-center">No hay facturas para este proveedor.</td>
+                                <th style="width: 20%">Sucursal</th>
+                                <th style="width: 20%">Factura</th>
+                                <th style="width: 20%">Emisión</th>
+                                <!-- (1) Se quita Vencimiento -->
+                                <th style="width: 20%" class="text-right">Valor</th>
+                                <th style="width: 20%" class="text-right">Abono / Saldo</th>
                             </tr>
-                        @endif
+                        </thead>
+                        <tbody>
+                            @php
+                                $facturasProveedor = 0;
+                            @endphp
+                            @foreach ($proveedor['sucursales'] ?? [] as $sucursal)
+                                @foreach ($sucursal['facturas'] ?? [] as $factura)
+                                    @php $facturasProveedor++; @endphp
+                                    <tr>
+                                        <td>{{ $sucursal['sucursal_nombre'] ?? $sucursal['sucursal_codigo'] }}</td>
+                                        <td>{{ $factura['numero'] }}</td>
+                                        <td>{{ $factura['fecha_emision'] }}</td>
+                                        <td class="text-right">
+                                            ${{ number_format((float) ($factura['valor'] ?? 0), 2, '.', ',') }}</td>
+                                        <td class="text-right">
+                                            ${{ number_format((float) ($factura['abono'] ?? 0), 2, '.', ',') }}<br>
+                                            <span style="font-size:11px; color:#4b5563">Saldo:
+                                                ${{ number_format((float) ($factura['saldo'] ?? 0), 2, '.', ',') }}</span>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            @endforeach
 
-                        <tr>
-                            <td colspan="3" class="text-right" style="font-weight:700; background:#e5e7eb">Subtotal
-                                proveedor</td>
-                            <td class="text-right" style="font-weight:700; background:#e5e7eb">
-                                ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }}
-                            </td>
-                            <td class="text-right" style="font-weight:700; background:#e5e7eb">
-                                ${{ number_format((float) ($proveedor['totales']['abono'] ?? 0), 2, '.', ',') }}<br>
-                                <span style="font-size:11px; color:#111827">Saldo:
-                                    ${{ number_format((float) ($proveedor['totales']['saldo'] ?? 0), 2, '.', ',') }}</span>
-                            </td>
-                        </tr>
-                    </tbody>
+                            @if ($facturasProveedor === 0)
+                                <tr>
+                                    <td colspan="5" class="text-center">No hay facturas para este proveedor.</td>
+                                </tr>
+                            @endif
+
+                            <tr>
+                                <td colspan="3" class="text-right" style="font-weight:700; background:#e5e7eb">Subtotal
+                                    proveedor</td>
+                                <td class="text-right" style="font-weight:700; background:#e5e7eb">
+                                    ${{ number_format((float) ($proveedor['totales']['valor'] ?? 0), 2, '.', ',') }}
+                                </td>
+                                <td class="text-right" style="font-weight:700; background:#e5e7eb">
+                                    ${{ number_format((float) ($proveedor['totales']['abono'] ?? 0), 2, '.', ',') }}<br>
+                                    <span style="font-size:11px; color:#111827">Saldo:
+                                        ${{ number_format((float) ($proveedor['totales']['saldo'] ?? 0), 2, '.', ',') }}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            @empty
+                <table>
+                    <tr>
+                        <td class="text-center">No existen proveedores para esta empresa.</td>
+                    </tr>
                 </table>
-            </div>
+            @endforelse
+
+            <!-- (3) Subtotal por empresa (ya existe, lo ajustamos a 3 columnas numéricas + etiqueta) -->
+            <table>
+                <tr>
+                    <td style="width:60%; font-weight:700; background:#f3f4f6">SUBTOTAL EMPRESA</td>
+                    <td class="text-right" style="width:13%; font-weight:700; background:#f3f4f6">
+                        ${{ number_format($empresaValor, 2, '.', ',') }}
+                    </td>
+                    <td class="text-right" style="width:13%; font-weight:700; background:#f3f4f6">
+                        ${{ number_format($empresaAbono, 2, '.', ',') }}
+                    </td>
+                    <td class="text-right" style="width:14%; font-weight:700; background:#f3f4f6">
+                        ${{ number_format($empresaSaldo, 2, '.', ',') }}
+                    </td>
+                </tr>
+            </table>
         @empty
             <table>
                 <tr>
-                    <td class="text-center">No existen proveedores para esta empresa.</td>
+                    <td class="text-center">No existen facturas seleccionadas.</td>
                 </tr>
             </table>
         @endforelse
 
-        <!-- (3) Subtotal por empresa (ya existe, lo ajustamos a 3 columnas numéricas + etiqueta) -->
-        <table>
-            <tr>
-                <td style="width:60%; font-weight:700; background:#f3f4f6">SUBTOTAL EMPRESA</td>
-                <td class="text-right" style="width:13%; font-weight:700; background:#f3f4f6">
-                    ${{ number_format($empresaValor, 2, '.', ',') }}
-                </td>
-                <td class="text-right" style="width:13%; font-weight:700; background:#f3f4f6">
-                    ${{ number_format($empresaAbono, 2, '.', ',') }}
-                </td>
-                <td class="text-right" style="width:14%; font-weight:700; background:#f3f4f6">
-                    ${{ number_format($empresaSaldo, 2, '.', ',') }}
-                </td>
-            </tr>
-        </table>
-    @empty
-        <table>
-            <tr>
-                <td class="text-center">No existen facturas seleccionadas.</td>
-            </tr>
-        </table>
-    @endforelse
+        @if (!empty($compras ?? []))
+            @php
+                foreach ($compras ?? [] as $grupo) {
+                    $totalComprasValor += (float) ($grupo['totales']['valor'] ?? 0);
+                    $totalComprasAbono += (float) ($grupo['totales']['abono'] ?? 0);
+                    $totalComprasSaldo += (float) ($grupo['totales']['saldo'] ?? 0);
+                }
+            @endphp
 
-    @if (!empty($compras ?? []))
-        @php
-            foreach ($compras ?? [] as $grupo) {
-                $totalComprasValor += (float) ($grupo['totales']['valor'] ?? 0);
-                $totalComprasAbono += (float) ($grupo['totales']['abono'] ?? 0);
-                $totalComprasSaldo += (float) ($grupo['totales']['saldo'] ?? 0);
-            }
-        @endphp
-
-        <div class="section-title">Compras</div>
-        @foreach ($compras as $grupo)
-            <div class="section-title">{{ $grupo['conexion_nombre'] }} - {{ $grupo['empresa_nombre'] }}</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 50%">Descripción del proveedor</th>
-                        <th style="width: 16%">Factura</th>
-                        <th style="width: 17%" class="text-right">Valor</th>
-                        <th style="width: 17%" class="text-right">Abono / Saldo</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($grupo['compras'] as $compra)
+            <div class="section-title">Compras</div>
+            @foreach ($compras as $grupo)
+                <div class="section-title">{{ $grupo['conexion_nombre'] }} - {{ $grupo['empresa_nombre'] }}</div>
+                <table>
+                    <thead>
                         <tr>
-                            <td>{{ $compra['descripcion'] ?: 'Compra adicional' }}</td>
-                            <td>{{ $compra['numero'] }}</td>
-                            <td class="text-right">
-                                ${{ number_format((float) ($compra['valor'] ?? 0), 2, '.', ',') }}
+                            <th style="width: 50%">Descripción del proveedor</th>
+                            <th style="width: 16%">Factura</th>
+                            <th style="width: 17%" class="text-right">Valor</th>
+                            <th style="width: 17%" class="text-right">Abono / Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($grupo['compras'] as $compra)
+                            <tr>
+                                <td>{{ $compra['descripcion'] ?: 'Compra adicional' }}</td>
+                                <td>{{ $compra['numero'] }}</td>
+                                <td class="text-right">
+                                    ${{ number_format((float) ($compra['valor'] ?? 0), 2, '.', ',') }}
+                                </td>
+                                <td class="text-right">
+                                    ${{ number_format((float) ($compra['abono'] ?? 0), 2, '.', ',') }}<br>
+                                    <span style="font-size:11px; color:#4b5563">Saldo:
+                                        ${{ number_format((float) ($compra['saldo'] ?? 0), 2, '.', ',') }}</span>
+                                </td>
+                            </tr>
+                        @endforeach
+
+                        <!-- (3) Subtotal de compras por empresa -->
+                        <tr>
+                            <td colspan="2" class="text-right" style="font-weight:700; background:#e5e7eb">SUBTOTAL COMPRAS
                             </td>
-                            <td class="text-right">
-                                ${{ number_format((float) ($compra['abono'] ?? 0), 2, '.', ',') }}<br>
-                                <span style="font-size:11px; color:#4b5563">Saldo:
-                                    ${{ number_format((float) ($compra['saldo'] ?? 0), 2, '.', ',') }}</span>
+                            <td class="text-right" style="font-weight:700; background:#e5e7eb">
+                                ${{ number_format((float) ($grupo['totales']['valor'] ?? 0), 2, '.', ',') }}
+                            </td>
+                            <td class="text-right" style="font-weight:700; background:#e5e7eb">
+                                ${{ number_format((float) ($grupo['totales']['abono'] ?? 0), 2, '.', ',') }}<br>
+                                <span style="font-size:11px; color:#111827">Saldo:
+                                    ${{ number_format((float) ($grupo['totales']['saldo'] ?? 0), 2, '.', ',') }}</span>
                             </td>
                         </tr>
-                    @endforeach
+                    </tbody>
+                </table>
+            @endforeach
+        @endif
 
-                    <!-- (3) Subtotal de compras por empresa -->
-                    <tr>
-                        <td colspan="2" class="text-right" style="font-weight:700; background:#e5e7eb">SUBTOTAL COMPRAS
-                        </td>
-                        <td class="text-right" style="font-weight:700; background:#e5e7eb">
-                            ${{ number_format((float) ($grupo['totales']['valor'] ?? 0), 2, '.', ',') }}
-                        </td>
-                        <td class="text-right" style="font-weight:700; background:#e5e7eb">
-                            ${{ number_format((float) ($grupo['totales']['abono'] ?? 0), 2, '.', ',') }}<br>
-                            <span style="font-size:11px; color:#111827">Saldo:
-                                ${{ number_format((float) ($grupo['totales']['saldo'] ?? 0), 2, '.', ',') }}</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        @endforeach
-    @endif
+        @php
+            $granTotalValor = $totalEmpresasValor + $totalComprasValor;
+            $granTotalAbono = $totalEmpresasAbono + $totalComprasAbono; // (4) VALOR A PAGAR = suma de abonos
+            $granTotalSaldo = $totalEmpresasSaldo + $totalComprasSaldo;
+        @endphp
 
-    @php
-        $granTotalValor = $totalEmpresasValor + $totalComprasValor;
-        $granTotalAbono = $totalEmpresasAbono + $totalComprasAbono; // (4) VALOR A PAGAR = suma de abonos
-        $granTotalSaldo = $totalEmpresasSaldo + $totalComprasSaldo;
-    @endphp
+        <table style="margin-top:18px;">
+            <thead>
+                <tr>
+                    <th>Resumen general</th>
+                    <th class="text-right">Valor</th>
+                    <th class="text-right">Abono</th>
+                    <th class="text-right">Saldo pendiente</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="font-weight:700">SUBTOTAL EMPRESAS</td>
+                    <td class="text-right">${{ number_format($totalEmpresasValor, 2, '.', ',') }}</td>
+                    <td class="text-right">${{ number_format($totalEmpresasAbono, 2, '.', ',') }}</td>
+                    <td class="text-right">${{ number_format($totalEmpresasSaldo, 2, '.', ',') }}</td>
+                </tr>
 
-    <table style="margin-top:18px;">
-        <thead>
-            <tr>
-                <th>Resumen general</th>
-                <th class="text-right">Valor</th>
-                <th class="text-right">Abono</th>
-                <th class="text-right">Saldo pendiente</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td style="font-weight:700">SUBTOTAL EMPRESAS</td>
-                <td class="text-right">${{ number_format($totalEmpresasValor, 2, '.', ',') }}</td>
-                <td class="text-right">${{ number_format($totalEmpresasAbono, 2, '.', ',') }}</td>
-                <td class="text-right">${{ number_format($totalEmpresasSaldo, 2, '.', ',') }}</td>
-            </tr>
+                <tr>
+                    <td style="font-weight:700">SUBTOTAL COMPRAS</td>
+                    <td class="text-right">${{ number_format($totalComprasValor, 2, '.', ',') }}</td>
+                    <td class="text-right">${{ number_format($totalComprasAbono, 2, '.', ',') }}</td>
+                    <td class="text-right">${{ number_format($totalComprasSaldo, 2, '.', ',') }}</td>
+                </tr>
 
-            <tr>
-                <td style="font-weight:700">SUBTOTAL COMPRAS</td>
-                <td class="text-right">${{ number_format($totalComprasValor, 2, '.', ',') }}</td>
-                <td class="text-right">${{ number_format($totalComprasAbono, 2, '.', ',') }}</td>
-                <td class="text-right">${{ number_format($totalComprasSaldo, 2, '.', ',') }}</td>
-            </tr>
+                <tr>
+                    <td style="font-weight:800">TOTALES ACUMULADOS</td>
+                    <td class="text-right" style="font-weight:800">${{ number_format($granTotalValor, 2, '.', ',') }}</td>
+                    <td class="text-right" style="font-weight:800">${{ number_format($granTotalAbono, 2, '.', ',') }}</td>
+                    <td class="text-right" style="font-weight:800">${{ number_format($granTotalSaldo, 2, '.', ',') }}</td>
+                </tr>
 
-            <tr>
-                <td style="font-weight:800">TOTALES ACUMULADOS</td>
-                <td class="text-right" style="font-weight:800">${{ number_format($granTotalValor, 2, '.', ',') }}</td>
-                <td class="text-right" style="font-weight:800">${{ number_format($granTotalAbono, 2, '.', ',') }}</td>
-                <td class="text-right" style="font-weight:800">${{ number_format($granTotalSaldo, 2, '.', ',') }}</td>
-            </tr>
-
-            <!-- (4) Línea final individual: VALOR A PAGAR = total de abonos -->
-            <tr class="pay-row">
-                <td colspan="3" class="text-right">VALOR A PAGAR:</td>
-                <td class="text-right">
-                    <span class="pay-highlight">${{ number_format($granTotalAbono, 2, '.', ',') }}</span>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-
-    <div class="signatures-wrap">
-        <table class="signatures-table">
-            <tr>
-                <td style="width:25%;">
-                    <div class="signature-line"></div>
-                    <div class="signature-name">{{ $usuario ?? 'N/D' }}</div>
-                    <div class="signature-role">Elaborado por</div>
-                </td>
-
-                <td style="width:25%;">
-                    <div class="signature-line"></div>
-                    <div class="signature-name">Ing. Janeth Machuca</div>
-                    <div class="signature-role">Gerente Financiera</div>
-                </td>
-
-                <td style="width:25%;">
-                    <div class="signature-line"></div>
-                    <div class="signature-name">Darwin Santamaria</div>
-                    <div class="signature-role">Gerente Administrador</div>
-                </td>
-
-                <td style="width:25%;">
-                    <div class="signature-line"></div>
-                    <div class="signature-name">Cristhian Santamaria</div>
-                    <div class="signature-role">Gerente General</div>
-                </td>
-            </tr>
+                <!-- (4) Línea final individual: VALOR A PAGAR = total de abonos -->
+                <tr class="pay-row">
+                    <td colspan="3" class="text-right">VALOR A PAGAR:</td>
+                    <td class="text-right">
+                        <span class="pay-highlight">${{ number_format($granTotalAbono, 2, '.', ',') }}</span>
+                    </td>
+                </tr>
+            </tbody>
         </table>
+
+        <div class="signatures-wrap">
+            <table class="signatures-table">
+                <tr>
+                    <td style="width:25%;">
+                        <div class="signature-line"></div>
+                        <div class="signature-name">{{ $usuario ?? 'N/D' }}</div>
+                        <div class="signature-role">Elaborado por</div>
+                    </td>
+
+                    <td style="width:25%;">
+                        <div class="signature-line"></div>
+                        <div class="signature-name">Ing. Janeth Machuca</div>
+                        <div class="signature-role">Gerente Financiera</div>
+                    </td>
+
+                    <td style="width:25%;">
+                        <div class="signature-line"></div>
+                        <div class="signature-name">Darwin Santamaria</div>
+                        <div class="signature-role">Gerente Administrador</div>
+                    </td>
+
+                    <td style="width:25%;">
+                        <div class="signature-line"></div>
+                        <div class="signature-name">Cristhian Santamaria</div>
+                        <div class="signature-role">Gerente General</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
     </div>
 </body>
 
