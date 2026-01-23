@@ -56,4 +56,12 @@ class SolicitudPagoDetalle extends Model
     {
         return $this->belongsTo(SolicitudPago::class);
     }
+
+    public function isCompra(): bool
+    {
+        $numeroFactura = (string) ($this->numero_factura ?? '');
+
+        return strtoupper((string) $this->erp_tabla) === 'COMPRA'
+            || str_starts_with($numeroFactura, 'COMPRA-');
+    }
 }

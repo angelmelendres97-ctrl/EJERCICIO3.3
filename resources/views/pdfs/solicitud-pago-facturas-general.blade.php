@@ -7,11 +7,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solicitud de pago de facturas - General</title>
     <style>
+        @page {
+            margin: 20px 24px 120px 24px;
+        }
+
         body {
-            font-family: 'DejaVu Sans', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 12px;
             color: #1f2937;
             position: relative;
+            padding-bottom: 120px;
         }
 
         h1 {
@@ -96,36 +101,28 @@
             color: #111827;
         }
 
-        /* Bloque final tipo “sello” */
-        .pay-box {
-            margin-top: 16px;
-            padding: 12px;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-        }
-
-        .pay-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .pay-label {
+        .pay-row td {
+            font-weight: 800;
             font-size: 13px;
-            font-weight: 900;
-            text-transform: uppercase;
+            border-top: 2px solid #111827 !important;
+            background: #fff;
         }
 
-        .pay-value {
-            font-size: 16px;
-            font-weight: 900;
+        .pay-highlight {
+            background: #fde047;
             padding: 6px 10px;
-            border-radius: 8px;
+            border-radius: 6px;
+            display: inline-block;
+            min-width: 140px;
+            text-align: right;
         }
 
         .signatures-wrap {
-            margin-top: 80px;
+            position: fixed;
+            bottom: 24px;
+            left: 0;
+            right: 0;
+            margin-top: 0;
         }
 
         .signatures-table {
@@ -363,14 +360,16 @@
     </table>
 
     <!-- (4) Línea final individual resaltada: ABONO/VALOR A PAGAR = suma de abonos -->
-    <div class="pay-box highlight-yellow" style="margin-top:18px;">
-        <div class="pay-row">
-            <div class="pay-label">VALOR A PAGAR:</div>
-            <div class="pay-value">
-                ${{ number_format($granTotalAbono, 2, '.', ',') }}
-            </div>
-        </div>
-    </div>
+    <table style="margin-top:18px;">
+        <tbody>
+            <tr class="pay-row">
+                <td colspan="3" class="text-right">VALOR A PAGAR:</td>
+                <td class="text-right">
+                    <span class="pay-highlight">${{ number_format($granTotalAbono, 2, '.', ',') }}</span>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 
     <div class="signatures-wrap">
         <table class="signatures-table">
