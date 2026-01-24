@@ -751,11 +751,17 @@ class SolicitudPagoResource extends Resource
         // 1) Facturas ya registradas (de solicitudes NO anuladas/rechazadas)
         $registradas = SolicitudPagoDetalle::query()
             ->where('erp_conexion', (string) $empresaId)
-            ->whereHas('solicitudPago', function ($q) {
-                $q->whereNull('estado')
-                    ->orWhereNotIn('estado', ['ANULADA', 'RECHAZADA']);
+            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
+            ->with('solicitudPago')
+            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id'])
+            ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                return self::shouldBlockFactura(
+                    $detalle->solicitudPago?->estado,
+                    $detalle->saldo_al_crear,
+                    $detalle->abono_aplicado
+                );
             })
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura'])
             ->map(fn($d) => ($d->erp_empresa_id ?? '') . '|' . ($d->erp_sucursal ?? '') . '|' . ($d->proveedor_codigo ?? '') . '|' . ($d->numero_factura ?? ''))
             ->flip(); // set
 
@@ -828,11 +834,16 @@ class SolicitudPagoResource extends Resource
                 fn($query) => $query->getModel()->relationLoaded('solicitudPago') === false,
                 fn($query) => $query->with('solicitudPago'),
             )
-            ->whereHas('solicitudPago', function ($q) {
-                $q->whereNull('estado')
-                    ->orWhereNotIn('estado', ['ANULADA', 'RECHAZADA']);
+            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
+            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id'])
+            ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                return self::shouldBlockFactura(
+                    $detalle->solicitudPago?->estado,
+                    $detalle->saldo_al_crear,
+                    $detalle->abono_aplicado
+                );
             })
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura'])
             ->map(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
             ->all();
 
@@ -977,6 +988,33 @@ class SolicitudPagoResource extends Resource
             ->all();
 
         return self::applySelectionFlags($facturasFinal);
+    }
+
+    public static function isEstadoActivoParaProveedor(?string $estado): bool
+    {
+        $estadoNormalizado = strtoupper((string) $estado);
+        $estadoAnuladaAprobada = strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA);
+
+        return ! in_array($estadoNormalizado, ['ANULADA', $estadoAnuladaAprobada], true);
+    }
+
+    public static function shouldBlockFactura(?string $estado, $saldoAlCrear, $abonoAplicado): bool
+    {
+        if (! self::isEstadoActivoParaProveedor($estado)) {
+            return false;
+        }
+
+        $estadoNormalizado = strtoupper((string) $estado);
+        $estadoCompletada = strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA);
+
+        if (in_array($estadoNormalizado, ['APROBADA', $estadoCompletada], true)) {
+            $saldo = (float) ($saldoAlCrear ?? 0);
+            $abono = (float) ($abonoAplicado ?? 0);
+
+            return $abono >= $saldo;
+        }
+
+        return true;
     }
 
     /**
