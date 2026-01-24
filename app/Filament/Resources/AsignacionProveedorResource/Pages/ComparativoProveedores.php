@@ -352,7 +352,7 @@ class ComparativoProveedores extends Page
                 ->color('primary')
                 ->icon('heroicon-o-document-check')
                 ->action('save')
-                ->visible(fn() => $this->record->estado !== 'Comparativo Precios'),
+                ->visible(fn() => !in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada'])),
 
             Action::make('finalizar')
                 ->label('Finalizar Comparativo Precios')
@@ -366,7 +366,7 @@ class ComparativoProveedores extends Page
                     Notification::make()->title('Proceso finalizado correctamente')->success()->send();
                     $this->redirect(AsignacionProveedorResource::getUrl('index'));
                 })
-                ->visible(fn() => $this->record->estado !== 'Comparativo Precios'),
+                ->visible(fn() => !in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada'])),
         ];
     }
 

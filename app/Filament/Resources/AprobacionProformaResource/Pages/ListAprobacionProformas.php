@@ -22,6 +22,13 @@ class ListAprobacionProformas extends ListRecords
         ];
     }
 
+    public function updatedActiveTab(): void
+    {
+        $this->tableFilters = null;
+        // Or try calling the emit if livewire
+        // $this->dispatch('resetTableFilters');
+    }
+
     protected function getHeaderActions(): array
     {
         return [

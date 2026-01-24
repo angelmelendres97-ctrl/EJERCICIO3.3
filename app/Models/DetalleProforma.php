@@ -46,7 +46,23 @@ class DetalleProforma extends Model
     public function proveedores()
     {
         return $this->belongsToMany(Proveedores::class, 'detalle_proforma_proveedores', 'id_detalle_proforma', 'id_proveedor')
-            ->withPivot(['seleccionado', 'costo'])
+            ->using(DetalleProformaProveedor::class)
+            ->withPivot([
+                'seleccionado',
+                'costo',
+                'cantidad_oferta',
+                'valor_unitario_oferta',
+                'total_oferta',
+                'descuento_porcentaje',
+                'iva_porcentaje',
+                'otros_cargos',
+                'subtotal_oferta',
+                'observacion_oferta',
+                'es_aprobado',
+                'cantidad_aprobada',
+                'precio_aprobado',
+                'observacion_aprobacion'
+            ])
             ->withTimestamps();
     }
 }

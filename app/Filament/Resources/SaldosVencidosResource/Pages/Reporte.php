@@ -29,6 +29,7 @@ class Reporte extends Page implements HasForms
     public ?array $data = [];
     public bool $consultado = false;
     public array $resultados = [];
+    public ?string $search = '';
 
     public function mount(): void
     {
@@ -43,11 +44,31 @@ class Reporte extends Page implements HasForms
         $page = $this->getPage();
         $perPage = 50;
 
-        $items = array_slice($this->resultados, ($page - 1) * $perPage, $perPage);
+        // Filter results based on search
+        $filteredResults = $this->resultados;
+
+        if (!empty($this->search)) {
+            $searchLower = strtolower($this->search);
+            $filteredResults = array_filter($this->resultados, function ($row) use ($searchLower) {
+                // Keep summaries if they match logic, but safer to match content.
+                // We will rely on re-processing or just naive text match.
+
+                // If it is a summary/header row, we might want to keep it if a child is visible, 
+                // but that's complex. For now, simple text match.
+                // Note: Providing 'proveedor' in headers helps match.
+
+                return str_contains(strtolower($row['proveedor'] ?? ''), $searchLower)
+                    || str_contains(strtolower($row['ruc'] ?? ''), $searchLower)
+                    || str_contains(strtolower($row['numero_factura'] ?? ''), $searchLower)
+                    || str_contains(strtolower($row['detalle'] ?? ''), $searchLower);
+            });
+        }
+
+        $items = array_slice($filteredResults, ($page - 1) * $perPage, $perPage);
 
         return new LengthAwarePaginator(
             $items,
-            count($this->resultados),
+            count($filteredResults),
             $perPage,
             $page,
             ['path' => request()->url(), 'query' => request()->query()]
@@ -125,6 +146,18 @@ class Reporte extends Page implements HasForms
                             ->alignCenter()
                             ->columnSpanFull(),
                     ])->columns(3),
+                Forms\Components\Section::make()
+                    ->schema([
+                        Forms\Components\Radio::make('tipo_reporte')
+                            ->label('Tipo de Reporte')
+                            ->options([
+                                'detallado' => 'Detallado (Por Factura)',
+                                'global' => 'Global (Acumulado por Proveedor)',
+                            ])
+                            ->default('detallado')
+                            ->inline()
+                            ->required(),
+                    ])->compact(),
             ]);
     }
 
@@ -137,6 +170,7 @@ class Reporte extends Page implements HasForms
         $conexiones = $formData['conexiones'] ?? [];
         $fechaHasta = $formData['fecha_hasta'];
         $proveedorRuc = $formData['proveedor_ruc'] ?? null;
+        $tipoReporte = $formData['tipo_reporte'] ?? 'detallado';
 
         foreach ($conexiones as $conexionId) {
             $connectionName = SaldosVencidosResource::getExternalConnectionName($conexionId);
@@ -228,85 +262,216 @@ class Reporte extends Page implements HasForms
         // PROCESAMIENTO POST-CONSULTA: ORDENAMIENTO Y SUB-TOTALES
         // -----------------------------------------------------------------
 
-        // 1. Ordenar por Proveedor (ASC) y Fecha Emisión (ASC)
-        usort($this->resultados, function ($a, $b) {
-            $proveedorCmp = strcmp($a['proveedor'], $b['proveedor']);
-            if ($proveedorCmp === 0) {
-                return strcmp($a['emision'], $b['emision']);
-            }
-            return $proveedorCmp;
-        });
-
         // 2. Agrupar y Calcular Sub-totales
         $finalResults = [];
+        $currentEmpresa = null;
         $currentProveedor = null;
         $grupoRows = [];
 
-        $processGroup = function ($rows) use (&$finalResults) {
-            if (empty($rows))
-                return;
+        // Track Company Summaries
+        $companyTotals = ['factura' => 0, 'abono' => 0, 'saldo' => 0];
 
-            // Agregar filas del grupo
-            foreach ($rows as $row) {
-                $row['type'] = 'data'; // Marcar como fila de datos
-                $finalResults[] = $row;
-            }
-
-            // Calcular totales
-            $totalFactura = 0;
-            $totalAbono = 0;
-            $totalSaldo = 0;
-            $proveedorName = $rows[0]['proveedor'];
-
-            foreach ($rows as $row) {
-                $totalFactura += $row['total_factura'];
-                $totalAbono += $row['abono'];
-                $totalSaldo += $row['saldo'];
-            }
-
-            // Agregar fila de resumen
+        // Helper to inject company summary
+        $injectCompanySummary = function ($companyName) use (&$finalResults, &$companyTotals) {
             $finalResults[] = [
-                'type' => 'summary',
-                'empresa_origen' => '', // No aplica
-                'codigo_proveedor' => '',
+                'type' => 'company_summary',
+                'empresa_origen' => $companyName, // To avoid breaking, although not strictly needed
+                'proveedor' => 'TOTAL POR PAGAR ' . $companyName,
+                'total_factura' => $companyTotals['factura'],
+                'abono' => $companyTotals['abono'],
+                'saldo' => $companyTotals['saldo'],
+                // Empty fields
                 'ruc' => '',
-                'proveedor' => 'TOTAL ' . $proveedorName,
                 'numero_factura' => '',
                 'detalle' => '',
                 'emision' => '',
                 'vencimiento' => '',
-                'abono' => $totalAbono,
-                'total_factura' => $totalFactura,
-                'saldo' => $totalSaldo,
+                'codigo_proveedor' => ''
             ];
+            // Reset totals
+            $companyTotals['factura'] = 0;
+            $companyTotals['abono'] = 0;
+            $companyTotals['saldo'] = 0;
         };
 
-        foreach ($this->resultados as $row) {
-            if ($currentProveedor !== $row['proveedor']) {
-                // Procesar grupo anterior
-                if (!empty($grupoRows)) {
-                    $processGroup($grupoRows);
-                }
-                // Iniciar nuevo grupo
-                $currentProveedor = $row['proveedor'];
-                $grupoRows = [];
-            }
-            $grupoRows[] = $row;
-        }
+        if ($tipoReporte === 'global') {
+            // ---------------- GLOBAL REPORT LOGIC ----------------
+            $aggregated = [];
 
-        // Procesar último grupo
-        if (!empty($grupoRows)) {
-            $processGroup($grupoRows);
+            foreach ($this->resultados as $row) {
+                $key = $row['empresa_origen'] . '|' . $row['proveedor'];
+
+                if (!isset($aggregated[$key])) {
+                    $aggregated[$key] = [
+                        'empresa_origen' => $row['empresa_origen'],
+                        'proveedor' => $row['proveedor'],
+                        'ruc' => $row['ruc'],
+                        'codigo_proveedor' => $row['codigo_proveedor'],
+                        'total_factura' => 0,
+                        'abono' => 0,
+                        'saldo' => 0,
+                        'numero_factura' => '-',
+                        'detalle' => '-',
+                        'emision' => '-',
+                        'vencimiento' => '-',
+                        'type' => 'data_global'
+                    ];
+                }
+
+                $aggregated[$key]['total_factura'] += $row['total_factura'];
+                $aggregated[$key]['abono'] += $row['abono'];
+                $aggregated[$key]['saldo'] += $row['saldo'];
+            }
+
+            $this->resultados = array_values($aggregated);
+
+            usort($this->resultados, function ($a, $b) {
+                $empresaCmp = strcmp($a['empresa_origen'], $b['empresa_origen']);
+                if ($empresaCmp !== 0)
+                    return $empresaCmp;
+                return strcmp($a['proveedor'], $b['proveedor']);
+            });
+
+            foreach ($this->resultados as $row) {
+                if ($currentEmpresa !== $row['empresa_origen']) {
+                    if ($currentEmpresa !== null) {
+                        $injectCompanySummary($currentEmpresa);
+                    }
+
+                    $finalResults[] = [
+                        'type' => 'company_header',
+                        'empresa_origen' => $row['empresa_origen'],
+                        'proveedor' => 'EMPRESA: ' . $row['empresa_origen'],
+                        'total_factura' => 0,
+                        'abono' => 0,
+                        'saldo' => 0,
+                        'ruc' => '',
+                        'numero_factura' => '',
+                        'detalle' => '',
+                        'emision' => '',
+                        'vencimiento' => '',
+                        'codigo_proveedor' => ''
+                    ];
+                    $currentEmpresa = $row['empresa_origen'];
+                }
+
+                // Add to company totals
+                $companyTotals['factura'] += $row['total_factura'];
+                $companyTotals['abono'] += $row['abono'];
+                $companyTotals['saldo'] += $row['saldo'];
+
+                $finalResults[] = $row;
+            }
+
+            // Inject last company summary
+            if ($currentEmpresa !== null) {
+                $injectCompanySummary($currentEmpresa);
+            }
+
+        } else {
+            // ---------------- DETAILED REPORT LOGIC ----------------
+            usort($this->resultados, function ($a, $b) {
+                $empresaCmp = strcmp($a['empresa_origen'], $b['empresa_origen']);
+                if ($empresaCmp !== 0)
+                    return $empresaCmp;
+                $proveedorCmp = strcmp($a['proveedor'], $b['proveedor']);
+                if ($proveedorCmp === 0)
+                    return strcmp($a['emision'], $b['emision']);
+                return $proveedorCmp;
+            });
+
+            $processGroup = function ($rows) use (&$finalResults, &$companyTotals) {
+                if (empty($rows))
+                    return;
+
+                foreach ($rows as $row) {
+                    $row['type'] = 'data';
+                    $finalResults[] = $row;
+
+                    // Add to company totals
+                    $companyTotals['factura'] += $row['total_factura'];
+                    $companyTotals['abono'] += $row['abono'];
+                    $companyTotals['saldo'] += $row['saldo'];
+                }
+
+                $totalFactura = 0;
+                $totalAbono = 0;
+                $totalSaldo = 0;
+                $proveedorName = $rows[0]['proveedor'];
+
+                foreach ($rows as $row) {
+                    $totalFactura += $row['total_factura'];
+                    $totalAbono += $row['abono'];
+                    $totalSaldo += $row['saldo'];
+                }
+
+                $finalResults[] = [
+                    'type' => 'summary',
+                    'empresa_origen' => '',
+                    'codigo_proveedor' => '',
+                    'ruc' => '',
+                    'proveedor' => 'TOTAL ' . $proveedorName,
+                    'numero_factura' => '',
+                    'detalle' => '',
+                    'emision' => '',
+                    'vencimiento' => '',
+                    'abono' => $totalAbono,
+                    'total_factura' => $totalFactura,
+                    'saldo' => $totalSaldo,
+                ];
+            };
+
+            foreach ($this->resultados as $row) {
+                if ($currentEmpresa !== $row['empresa_origen']) {
+                    if (!empty($grupoRows)) {
+                        $processGroup($grupoRows);
+                        $grupoRows = [];
+                    }
+                    if ($currentEmpresa !== null) {
+                        $injectCompanySummary($currentEmpresa);
+                    }
+
+                    $finalResults[] = [
+                        'type' => 'company_header',
+                        'empresa_origen' => $row['empresa_origen'],
+                        'proveedor' => 'EMPRESA: ' . $row['empresa_origen'],
+                        'total_factura' => 0,
+                        'abono' => 0,
+                        'saldo' => 0,
+                        'ruc' => '',
+                        'numero_factura' => '',
+                        'detalle' => '',
+                        'emision' => '',
+                        'vencimiento' => '',
+                        'codigo_proveedor' => ''
+                    ];
+
+                    $currentEmpresa = $row['empresa_origen'];
+                    $currentProveedor = $row['proveedor'];
+                } else if ($currentProveedor !== $row['proveedor']) {
+                    if (!empty($grupoRows)) {
+                        $processGroup($grupoRows);
+                    }
+                    $currentProveedor = $row['proveedor'];
+                    $grupoRows = [];
+                }
+                $grupoRows[] = $row;
+            }
+
+            if (!empty($grupoRows)) {
+                $processGroup($grupoRows);
+            }
+            if ($currentEmpresa !== null) {
+                $injectCompanySummary($currentEmpresa);
+            }
         }
 
         $this->resultados = $finalResults;
-
         $this->dispatch('updateTable');
     }
 
     public function exportarPdf()
     {
-        // Ejecutar la consulta para tener los datos frescos
         $this->consultar();
 
         if (empty($this->resultados)) {
@@ -317,16 +482,19 @@ class Reporte extends Page implements HasForms
             return;
         }
 
-        // Filtrar solo filas de datos (excluir subtotales generados para la vista web)
-        $rawData = collect($this->resultados)->where('type', 'data')->all();
+        // Pass full results list and report type to PDF
+        $resultados = $this->resultados;
+        $tipoReporte = $this->data['tipo_reporte'] ?? 'detallado';
 
-        // Obtener nombres de empresas únicos
-        $nombresEmpresas = collect($rawData)->pluck('empresa_origen')->unique()->implode(' - ');
+        // Extract company names for title (naive)
+        $nombresEmpresas = collect($resultados)
+            ->whereIn('type', ['company_header', 'data', 'data_global'])
+            ->pluck('empresa_origen')
+            ->unique()
+            ->filter()
+            ->implode(' - ');
 
-        // Agrupar por proveedor para el PDF
-        $groupedResults = collect($rawData)->groupBy('proveedor');
-
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.saldos_vencidos', compact('groupedResults', 'nombresEmpresas'))
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.saldos_vencidos', compact('resultados', 'nombresEmpresas', 'tipoReporte'))
             ->setPaper('a4', 'landscape');
 
         return response()->streamDownload(function () use ($pdf) {

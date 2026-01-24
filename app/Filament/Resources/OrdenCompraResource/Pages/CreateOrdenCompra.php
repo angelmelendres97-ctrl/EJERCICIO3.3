@@ -192,9 +192,8 @@ class CreateOrdenCompra extends CreateRecord
                 if ($esAuxiliar) {
                     $descripcionAuxiliar = $detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar;
                     $auxiliarDescripcion = trim(collect([
-                        $detalle->dped_cod_auxiliar ? 'Código auxiliar: ' . $detalle->dped_cod_auxiliar : null,
-                        $detalle->dped_det_dped ? 'Descripción: ' . $detalle->dped_det_dped : null,
-                        $descripcionAuxiliar ? 'Descripción auxiliar: ' . $descripcionAuxiliar : null,
+                        $detalle->dped_cod_auxiliar ? 'Código: ' . $detalle->dped_cod_auxiliar : null,
+                        $descripcionAuxiliar ? 'Nombre: ' . $descripcionAuxiliar : null,
                     ])->filter()->implode(' | '));
 
                     $auxiliarData = [

@@ -298,6 +298,43 @@ class AprobacionProformaResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('amdg_id_empresa')
+                    ->label('Empresa')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saeempr')
+                                ->where('empr_cod_empr', $state)
+                                ->value('empr_nom_empr') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('amdg_id_sucursal')
+                    ->label('Sucursal')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saesucu')
+                                ->where('sucu_cod_empr', $record->amdg_id_empresa)
+                                ->where('sucu_cod_sucu', $state)
+                                ->value('sucu_nom_sucu') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('fecha_pedido')->date()->label('Fecha'),
                 Tables\Columns\TextColumn::make('proveedor')->searchable()->placeholder('N/A'),
                 Tables\Columns\TextColumn::make('observaciones')->label('Observaciones')->limit(50)->tooltip(fn($state) => $state),
@@ -314,17 +351,22 @@ class AprobacionProformaResource extends Resource
                     }),
             ])
             ->filtersLayout(Tables\Enums\FiltersLayout::AboveContent)
-            ->deferFilters()
-            ->filtersApplyAction(fn(Tables\Actions\Action $action) => $action->hidden())
+            ->filtersLayout(Tables\Enums\FiltersLayout::AboveContent)
+            // ->deferFilters()
+            // ->filtersApplyAction(fn(Tables\Actions\Action $action) => $action->hidden())
             ->filters([
                 Tables\Filters\Filter::make('fecha_pedido')
                     ->columnSpanFull()
+                    ->default([
+                        'desde' => now(), // Default values for the form
+                        'hasta' => now(),
+                    ])
                     ->form([
                         Forms\Components\Grid::make(12)
                             ->schema([
                                 Forms\Components\DatePicker::make('desde')
                                     ->label('Desde')
-                                    ->default(now()->startOfMonth())
+                                    ->default(now()) // Keep component default just in case
                                     ->columnSpan(6),
                                 Forms\Components\DatePicker::make('hasta')->label('Hasta')->default(now())->columnSpan(6),
                                 Forms\Components\Actions::make([
@@ -332,7 +374,7 @@ class AprobacionProformaResource extends Resource
                                         ->label('Consultar')
                                         ->button()
                                         ->color('primary')
-                                        ->extraAttributes(['class' => 'w-full md:w-auto', 'wire:click' => 'applyTableFilters'])
+                                        ->extraAttributes(['class' => 'w-full md:w-auto', 'wire:click' => '$refresh']) // Changed to $refresh since filters are live
                                 ])
                                     ->label('Click para consultar')
                                     ->alignment('center')
@@ -350,7 +392,7 @@ class AprobacionProformaResource extends Resource
                                 fn(Builder $query, $date): Builder => $query->whereDate('fecha_pedido', '<=', $date),
                             );
                     })
-                    ->visible(fn($livewire) => property_exists($livewire, 'activeTab') && $livewire->activeTab === 'historial')
+                    ->visible(fn($livewire) => $livewire->activeTab === 'historial')
             ])
             ->actions([
                 Tables\Actions\EditAction::make('aprobar')
