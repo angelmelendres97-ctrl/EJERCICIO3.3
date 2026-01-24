@@ -276,7 +276,9 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             return [];
         }
 
-        $registradas = $this->getRegisteredFacturaKeys($conexion, $empresas, $sucursales);
+        $exclusionData = $this->getFacturaExclusionData($conexion, $empresas, $sucursales);
+        $blockedFacturaKeys = $exclusionData['blocked'];
+        $appliedFacturaAmounts = $exclusionData['applied'];
         $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
         $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
         $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
@@ -315,7 +317,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) <> 0');
 
         return $query->get()
-            ->reject(function ($row) use ($conexion, $registradas) {
+            ->reject(function ($row) use ($conexion, $blockedFacturaKeys, $appliedFacturaAmounts) {
                 $erpClave = $this->buildFacturaKey(
                     (string) $conexion,
                     (string) ($row->empresa ?? ''),
@@ -325,11 +327,29 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                     (string) ($row->proveedor_ruc ?? '')
                 );
 
-                return $registradas->has($erpClave);
+                if (isset($blockedFacturaKeys[$erpClave])) {
+                    return true;
+                }
+
+                $saldo = (float) ($row->saldo ?? 0);
+                $aplicado = (float) ($appliedFacturaAmounts[$erpClave] ?? 0);
+
+                return ($saldo - $aplicado) <= 0;
             })
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase) {
+            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $appliedFacturaAmounts) {
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
+                $erpClave = $this->buildFacturaKey(
+                    (string) $conexion,
+                    (string) ($row->empresa ?? ''),
+                    (string) ($row->sucursal ?? ''),
+                    (string) ($row->proveedor_codigo ?? ''),
+                    (string) ($row->numero_factura ?? ''),
+                    (string) ($row->proveedor_ruc ?? '')
+                );
+                $saldo = (float) ($row->saldo ?? 0);
+                $aplicado = (float) ($appliedFacturaAmounts[$erpClave] ?? 0);
+                $saldoDisponible = max(0, $saldo - $aplicado);
 
                 return [
                     'conexion_id' => $conexion,
@@ -345,22 +365,22 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                     'numero_factura' => $row->numero_factura,
                     'fecha_emision' => $row->fecha_emision,
                     'fecha_vencimiento' => $row->fecha_vencimiento,
-                    'saldo' => abs((float) $row->saldo),
+                    'saldo' => abs($saldoDisponible),
                 ];
             })
             ->all();
     }
 
-    protected function getRegisteredFacturaKeys(int $conexion, array $empresas, array $sucursales): Collection
+    protected function getFacturaExclusionData(int $conexion, array $empresas, array $sucursales): array
     {
-        return SolicitudPagoDetalle::query()
+        $estadoAnuladaAprobada = strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA);
+        $estadoCompletada = strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA);
+
+        $detalles = SolicitudPagoDetalle::query()
             ->where('erp_conexion', (string) $conexion)
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
-            ->whereHas('solicitudPago', function ($q) {
-                $q->whereNull('estado')
-                    ->orWhereIn('estado', ['BORRADOR', 'PENDIENTE']);
-            })
+            ->with('solicitudPago:id,estado')
             ->get([
                 'erp_clave',
                 'erp_conexion',
@@ -369,13 +389,25 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 'proveedor_codigo',
                 'proveedor_ruc',
                 'numero_factura',
+                'abono_aplicado',
+                'solicitud_pago_id',
             ])
-            ->map(function ($detalle) {
-                if (! empty($detalle->erp_clave)) {
-                    return $detalle->erp_clave;
-                }
+            ->all();
 
-                return $this->buildFacturaKey(
+        $blocked = [];
+        $applied = [];
+
+        foreach ($detalles as $detalle) {
+            $estado = strtoupper((string) $detalle->solicitudPago?->estado);
+
+            if ($estado === 'ANULADA' || $estado === $estadoAnuladaAprobada) {
+                continue;
+            }
+
+            $erpClave = $detalle->erp_clave;
+
+            if (empty($erpClave)) {
+                $erpClave = $this->buildFacturaKey(
                     (string) ($detalle->erp_conexion ?? ''),
                     (string) ($detalle->erp_empresa_id ?? ''),
                     (string) ($detalle->erp_sucursal ?? ''),
@@ -383,9 +415,25 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                     (string) ($detalle->numero_factura ?? ''),
                     (string) ($detalle->proveedor_ruc ?? '')
                 );
-            })
-            ->filter()
-            ->flip();
+            }
+
+            if (! $erpClave) {
+                continue;
+            }
+
+            if ($estado === 'APROBADA' || $estado === $estadoCompletada) {
+                $applied[$erpClave] = ($applied[$erpClave] ?? 0)
+                    + (float) ($detalle->abono_aplicado ?? 0);
+                continue;
+            }
+
+            $blocked[$erpClave] = true;
+        }
+
+        return [
+            'blocked' => $blocked,
+            'applied' => $applied,
+        ];
     }
 
     protected function groupByProveedor($registros): array
