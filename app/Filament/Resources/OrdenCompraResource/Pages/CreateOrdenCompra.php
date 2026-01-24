@@ -216,6 +216,9 @@ class CreateOrdenCompra extends CreateRecord
                     ])->filter()->implode(' | '));
                 }
 
+                $detallePedido = trim((string) ($detalle->dped_det_dped ?? ''));
+                $detallePedido = $detallePedido !== '' ? $detallePedido : null;
+
                 $productoLinea = $esServicio
                     ? ($detalle->dped_det_dped ?? $productoNombre)
                     : $productoNombre;
@@ -231,6 +234,7 @@ class CreateOrdenCompra extends CreateRecord
                     'unidad' => $unidadItem,
                     'es_auxiliar' => $esAuxiliar,
                     'es_servicio' => $esServicio,
+                    'detalle_pedido' => $detallePedido,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,

@@ -107,6 +107,7 @@ class EditOrdenCompra extends EditRecord
                     ?? $first->dped_desc_axiliar
                     ?? $first->deped_prod_nom
                     ?? null,
+                'detalle_pedido' => $first->dped_det_dped ?? null,
                 'codigo_producto_estandar' => $codigoProducto,
             ];
         })->where('cantidad_pendiente', '>', 0);
@@ -176,6 +177,7 @@ class EditOrdenCompra extends EditRecord
                     'producto' => $productoLinea,
                     'es_auxiliar' => $detalle->es_auxiliar,
                     'es_servicio' => $detalle->es_servicio,
+                    'detalle_pedido' => $detalle->detalle_pedido,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
