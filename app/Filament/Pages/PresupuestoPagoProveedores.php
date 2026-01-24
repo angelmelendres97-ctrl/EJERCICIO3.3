@@ -277,6 +277,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
         }
 
         $registradas = $this->getRegisteredFacturaKeys($conexion, $empresas, $sucursales);
+        $saldosPendientes = SolicitudPagoResource::getSaldosPendientesAprobados($conexion, $empresas, $sucursales);
         $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
         $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
         $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
@@ -327,9 +328,16 @@ class PresupuestoPagoProveedores extends Page implements HasForms
 
                 return $registradas->has($erpClave);
             })
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase) {
+            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $saldosPendientes) {
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
+                $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+                $saldoFactura = abs((float) $row->saldo);
+                $saldoPendiente = $saldosPendientes[$facturaKey] ?? $saldoFactura;
+
+                if (array_key_exists($facturaKey, $saldosPendientes)) {
+                    $saldoPendiente = min($saldoFactura, $saldoPendiente);
+                }
 
                 return [
                     'conexion_id' => $conexion,
@@ -345,9 +353,10 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                     'numero_factura' => $row->numero_factura,
                     'fecha_emision' => $row->fecha_emision,
                     'fecha_vencimiento' => $row->fecha_vencimiento,
-                    'saldo' => abs((float) $row->saldo),
+                    'saldo' => $saldoPendiente,
                 ];
             })
+            ->filter(fn(array $row) => (float) ($row['saldo'] ?? 0) > 0)
             ->all();
     }
 
@@ -357,10 +366,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->where('erp_conexion', (string) $conexion)
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
-            ->whereHas('solicitudPago', function ($q) {
-                $q->whereNull('estado')
-                    ->orWhereIn('estado', ['BORRADOR', 'PENDIENTE']);
-            })
+            ->with('solicitudPago')
             ->get([
                 'erp_clave',
                 'erp_conexion',
@@ -369,7 +375,17 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 'proveedor_codigo',
                 'proveedor_ruc',
                 'numero_factura',
+                'saldo_al_crear',
+                'abono_aplicado',
+                'solicitud_pago_id',
             ])
+            ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                return SolicitudPagoResource::shouldBlockFactura(
+                    $detalle->solicitudPago?->estado,
+                    $detalle->saldo_al_crear,
+                    $detalle->abono_aplicado
+                );
+            })
             ->map(function ($detalle) {
                 if (! empty($detalle->erp_clave)) {
                     return $detalle->erp_clave;
