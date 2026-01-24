@@ -492,11 +492,21 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\Hidden::make('pedido_codigo'),
                                         Forms\Components\Hidden::make('pedido_detalle_id'),
 
+                                        Forms\Components\TextInput::make('detalle_pedido')
+                                            ->label('Detalle del pedido')
+                                            ->disabled()
+                                            ->dehydrated(false)
+                                            ->visible(fn(Get $get) => filled($get('detalle_pedido')))
+                                            ->columnSpan(['default' => 12, 'lg' => 14]),
+
                                         Forms\Components\TextInput::make('producto_auxiliar')
                                             ->label('Producto auxiliar')
                                             ->disabled()
                                             ->dehydrated(false)
-                                            ->visible(fn(Get $get) => (bool) $get('es_auxiliar'))
+                                            //->visible(fn(Get $get) => (bool) $get('es_auxiliar'))
+                                            //nunca visible
+                                            ->visible(false)
+
                                             ->columnSpan(['default' => 12, 'lg' => 14]),
                                         Forms\Components\Hidden::make('unidad'),
 
@@ -581,11 +591,19 @@ class OrdenCompraResource extends Resource
                                             ->searchable()
                                             ->live()
                                             ->required()
-                                            ->helperText(fn(Get $get) => (bool) $get('es_auxiliar')
-                                                ? 'Seleccione un producto real del inventario para reemplazar el auxiliar.'
-                                                : ((bool) $get('es_servicio')
-                                                    ? 'Seleccione un producto real del inventario para reemplazar el servicio.'
-                                                    : null))
+                                            ->helperText(function (Get $get) {
+                                                if ((bool) $get('es_auxiliar')) {
+                                                    // Muestra el nombre que ya tienes en el campo "Producto auxiliar"
+                                                    return $get('producto_auxiliar') ?: null;
+                                                }
+
+                                                if ((bool) $get('es_servicio')) {
+                                                    // Muestra el nombre que ya tienes en el campo "Servicio"
+                                                    return $get('producto_servicio') ?: null;
+                                                }
+
+                                                return null;
+                                            })
                                             ->columnSpan(['default' => 12, 'lg' => 3])
                                             ->afterStateUpdated(function (Set $set, Get $get, ?string $state) {
                                                 if (empty($state)) {

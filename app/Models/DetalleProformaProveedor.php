@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 
-class DetalleProformaProveedor extends Model
+class DetalleProformaProveedor extends Pivot
 {
     protected $table = 'detalle_proforma_proveedores';
 
@@ -24,11 +24,25 @@ class DetalleProformaProveedor extends Model
         'otros_cargos',
         'total_oferta',
         'observacion_oferta',
+        'es_aprobado',
+        'cantidad_aprobada',
+        'precio_aprobado',
+        'observacion_aprobacion',
     ];
 
     protected $casts = [
         'seleccionado' => 'boolean',
+        'es_aprobado' => 'boolean',
         'costo' => 'float',
+        'cantidad_oferta' => 'float',
+        'valor_unitario_oferta' => 'float',
+        'subtotal_oferta' => 'float',
+        'descuento_porcentaje' => 'float',
+        'iva_porcentaje' => 'float',
+        'otros_cargos' => 'float',
+        'total_oferta' => 'float',
+        'cantidad_aprobada' => 'float',
+        'precio_aprobado' => 'float',
     ];
 
     public function detalleProforma()

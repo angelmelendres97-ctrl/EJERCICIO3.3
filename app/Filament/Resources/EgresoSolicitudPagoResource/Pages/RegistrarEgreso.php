@@ -68,10 +68,7 @@ class RegistrarEgreso extends Page implements HasTable
 
     protected function hydrateProviderData(): void
     {
-        $detalles = $this->record
-            ->loadMissing('detalles')
-            ->detalles
-            ->reject(fn(SolicitudPagoDetalle $detalle) => $detalle->isCompra());
+        $detalles = $this->record->loadMissing('detalles')->detalles;
 
         $this->facturasByProvider = [];
         $this->providerContexts = [];
@@ -191,16 +188,6 @@ class RegistrarEgreso extends Page implements HasTable
                 COUNT(*) as facturas_count
             ')
             ->where('solicitud_pago_id', $this->record->getKey())
-            ->where(function (Builder $query) {
-                $query
-                    ->whereNull('erp_tabla')
-                    ->orWhereRaw('UPPER(erp_tabla) != ?', ['COMPRA']);
-            })
-            ->where(function (Builder $query) {
-                $query
-                    ->whereNull('numero_factura')
-                    ->orWhere('numero_factura', 'not like', 'COMPRA-%');
-            })
             ->groupBy('proveedor_codigo', 'proveedor_nombre', 'proveedor_ruc')
             ->orderBy('proveedor_nombre');
     }

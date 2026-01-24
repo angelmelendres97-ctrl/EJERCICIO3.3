@@ -369,6 +369,43 @@ class ProformaResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('amdg_id_empresa')
+                    ->label('Empresa')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saeempr')
+                                ->where('empr_cod_empr', $state)
+                                ->value('empr_nom_empr') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('amdg_id_sucursal')
+                    ->label('Sucursal')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saesucu')
+                                ->where('sucu_cod_empr', $record->amdg_id_empresa)
+                                ->where('sucu_cod_sucu', $state)
+                                ->value('sucu_nom_sucu') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('fecha_pedido')->date()->label('Fecha'),
                 Tables\Columns\TextColumn::make('proveedor')->searchable()->placeholder('N/A'),
                 Tables\Columns\TextColumn::make('observaciones')->limit(30),

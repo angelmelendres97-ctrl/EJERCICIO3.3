@@ -67,6 +67,25 @@
             font-weight: bold;
         }
 
+        /* Company Header */
+        .company-header td {
+            background-color: #dbeafe;
+            /* Blue 100 */
+            color: #1e3a8a;
+            /* Blue 900 */
+            font-weight: bold;
+            text-align: center;
+        }
+
+        /* Company Summary */
+        .company-summary td {
+            background-color: #ccfbf1;
+            /* Teal 100 */
+            color: #134e4a;
+            /* Teal 900 */
+            font-weight: bold;
+        }
+
         .subtotal-row td {
             background-color: #e0e0e0;
             font-weight: bold;
@@ -83,59 +102,89 @@
 <body>
     <div class="header">
         <h1>{{ mb_strtoupper($nombresEmpresas) }}</h1>
-        <h2>REPORTE SALDOS VENCIDOS</h2>
+        <h2>REPORTE SALDOS VENCIDOS - {{ mb_strtoupper($tipoReporte === 'global' ? 'GLOBAL' : 'DETALLADO') }}</h2>
         <h3>Fecha Reporte: {{ now()->format('d-m-Y') }}</h3>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th style="width: 25%;">Proveedor</th>
-                <th style="width: 12%;">No. Factura</th>
-                <th style="width: 8%;">Fecha Emisión</th>
-                <th style="width: 8%;">Fecha Vence</th>
-                <th style="width: 35%;">Detalle</th>
-                <th style="width: 12%;">Saldo</th>
+                @if($tipoReporte === 'global')
+                    <th style="width: 50%;">Proveedor</th>
+                    <th style="width: 15%;">Total</th>
+                    <th style="width: 15%;">Abono</th>
+                    <th style="width: 20%;">Saldo</th>
+                @else
+                    <th style="width: 25%;">Proveedor</th>
+                    <th style="width: 12%;">No. Factura</th>
+                    <th style="width: 8%;">Fecha Emisión</th>
+                    <th style="width: 8%;">Fecha Vence</th>
+                    <th style="width: 35%;">Detalle</th>
+                    <th style="width: 12%;">Saldo</th>
+                @endif
             </tr>
         </thead>
         <tbody>
-            @php
-                $grandTotal = 0;
-            @endphp
-
-            @foreach($groupedResults as $proveedor => $rows)
+            @foreach($resultados as $row)
                 @php
-                    $subTotal = collect($rows)->sum('saldo');
-                    $grandTotal += $subTotal;
-                    $rowCount = count($rows);
+                    $type = $row['type'] ?? 'data';
                 @endphp
 
-                @foreach($rows as $index => $row)
-                    <tr>
-                        @if($index === 0)
-                            <td rowspan="{{ $rowCount }}" style="vertical-align: middle; font-weight: bold;">
-                                {{ $proveedor }}
-                            </td>
-                        @endif
-                        <td class="text-center">{{ $row['numero_factura'] }}</td>
-                        <td class="text-center">{{ \Carbon\Carbon::parse($row['emision'])->format('d/m/Y') }}</td>
-                        <td class="text-center">{{ \Carbon\Carbon::parse($row['vencimiento'])->format('d/m/Y') }}</td>
-                        <td>{{ $row['detalle'] }}</td>
-                        <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                @if($type === 'company_header')
+                    <tr class="company-header">
+                        <td colspan="{{ $tipoReporte === 'global' ? 4 : 6 }}">
+                            {{ $row['proveedor'] }}
+                        </td>
                     </tr>
-                @endforeach
-
-                <!-- Subtotal Row -->
-                <tr class="subtotal-row">
-                    <td colspan="5" class="text-right">SALDO:</td>
-                    <td class="text-right">{{ number_format($subTotal, 2) }}</td>
-                </tr>
+                @elseif($type === 'company_summary')
+                    <tr class="company-summary">
+                        @if($tipoReporte === 'global')
+                            <td class="text-right">TOTAL POR PAGAR</td>
+                            <td class="text-right">{{ number_format($row['total_factura'], 2) }}</td>
+                            <td class="text-right">{{ number_format($row['abono'], 2) }}</td>
+                            <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                        @else
+                            <td colspan="5" class="text-right">TOTAL POR PAGAR (SALDO):</td>
+                            <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                        @endif
+                    </tr>
+                @elseif($type === 'summary')
+                    {{-- Provider Summary in Detailed View --}}
+                    @if($tipoReporte !== 'global')
+                        <tr class="subtotal-row">
+                            <td colspan="5" class="text-right">{{ $row['proveedor'] }}:</td>
+                            <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                        </tr>
+                    @endif
+                @elseif($type === 'data' || $type === 'data_global')
+                    <tr>
+                        @if($tipoReporte === 'global')
+                            <td>{{ $row['proveedor'] }}</td>
+                            <td class="text-right">{{ number_format($row['total_factura'], 2) }}</td>
+                            <td class="text-right">{{ number_format($row['abono'], 2) }}</td>
+                            <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                        @else
+                            <td>{{ $row['proveedor'] }}</td>
+                            <td class="text-center">{{ $row['numero_factura'] }}</td>
+                            <td class="text-center">
+                                {{ $row['emision'] ? \Carbon\Carbon::parse($row['emision'])->format('d/m/Y') : '-' }}
+                            </td>
+                            <td class="text-center">
+                                {{ $row['vencimiento'] ? \Carbon\Carbon::parse($row['vencimiento'])->format('d/m/Y') : '-' }}
+                            </td>
+                            <td>{{ $row['detalle'] }}</td>
+                            <td class="text-right">{{ number_format($row['saldo'], 2) }}</td>
+                        @endif
+                    </tr>
+                @endif
             @endforeach
         </tbody>
         <tfoot>
             <tr class="total-row">
-                <td colspan="5" class="text-right">TOTAL:</td>
-                <td class="text-right">{{ number_format($grandTotal, 2) }}</td>
+                <td colspan="{{ $tipoReporte === 'global' ? 3 : 5 }}" class="text-right">TOTAL GENERAL:</td>
+                <td class="text-right">
+                    {{ number_format(collect($resultados)->whereIn('type', ['data', 'data_global'])->sum('saldo'), 2) }}
+                </td>
             </tr>
         </tfoot>
     </table>

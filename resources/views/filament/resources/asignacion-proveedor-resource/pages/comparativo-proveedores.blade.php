@@ -19,7 +19,7 @@
                                     </div>
                                     <div class="mt-2 text-left">
                                         <label class="text-[10px] font-bold text-gray-500">Observación General:</label>
-                                        @if($this->record->estado === 'Comparativo Precios')
+                                        @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                             <div class="text-xs text-gray-500 italic bg-gray-50 p-2 rounded border border-gray-200">
                                                 {{ $providerObservations[$provider->id] ?? 'Sin observaciones generales.' }}
                                             </div>
@@ -67,7 +67,7 @@
                                                 <div class="flex-1">
                                                     <label
                                                         class="text-[10px] uppercase font-bold text-gray-500 block mb-1">Cant.</label>
-                                                    @if($this->record->estado === 'Comparativo Precios')
+                                                    @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                         <div class="text-xs p-1.5">
                                                             {{ number_format($pivot['cantidad_oferta'] ?? 0, 2) }}</div>
                                                     @else
@@ -81,7 +81,7 @@
                                                     <label
                                                         class="text-[10px] uppercase font-bold text-gray-500 block mb-1">Costo</label>
                                                     <div class="relative">
-                                                        @if($this->record->estado === 'Comparativo Precios')
+                                                        @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                             <div class="text-xs p-1.5">
                                                                 ${{ number_format($pivot['valor_unitario_oferta'] ?? 0, 2) }}</div>
                                                         @else
@@ -95,7 +95,7 @@
                                                 <div class="flex-1">
                                                     <label class="text-[10px] uppercase font-bold text-gray-500 block mb-1">Desc
                                                         %</label>
-                                                    @if($this->record->estado === 'Comparativo Precios')
+                                                    @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                         <div class="text-xs p-1.5">
                                                             {{ number_format($pivot['descuento_porcentaje'] ?? 0, 2) }}%</div>
                                                     @else
@@ -111,7 +111,7 @@
                                                 <div class="flex-1">
                                                     <label
                                                         class="text-[10px] uppercase font-bold text-gray-500 block mb-1">IVA</label>
-                                                    @if($this->record->estado === 'Comparativo Precios')
+                                                    @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                         <div class="text-xs p-1.5">
                                                             {{ number_format($pivot['iva_porcentaje'] ?? 0, 0) }}%</div>
                                                     @else
@@ -130,7 +130,7 @@
                                                     <label
                                                         class="text-[10px] uppercase font-bold text-gray-500 block mb-1">Otros</label>
                                                     <div class="relative">
-                                                        @if($this->record->estado === 'Comparativo Precios')
+                                                        @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                             <div class="text-xs p-1.5">
                                                                 ${{ number_format($pivot['otros_cargos'] ?? 0, 2) }}</div>
                                                         @else
@@ -153,7 +153,7 @@
 
                                             <!-- Observacion -->
                                             <div class="relative">
-                                                @if($this->record->estado === 'Comparativo Precios')
+                                                @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                                                     <div class="text-xs p-1.5 italic text-gray-600">
                                                         {{ $pivot['observacion_oferta'] ?? '-' }}</div>
                                                 @else
@@ -236,7 +236,7 @@
 
         <div class="mt-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
             <label class="block text-sm font-bold text-gray-700 mb-2">Observación General del Comparativo</label>
-            @if($this->record->estado === 'Comparativo Precios')
+            @if(in_array($this->record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                 <div class="p-3 bg-gray-50 rounded-lg text-gray-700 text-sm border border-gray-200 min-h-[80px]">
                     {{ $globalObservation ?? 'Sin observación general.' }}
                 </div>

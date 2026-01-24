@@ -524,12 +524,14 @@ class ProveedorResource extends Resource
 
                     Forms\Components\TextInput::make('dias_pago')
                         ->numeric()
-                        ->label('Días de Pago'),
+                        ->label('Días de Pago')
+                        ->default(0),
 
                     Forms\Components\TextInput::make('limite_credito')
                         ->numeric()
                         ->label('Límite de Crédito')
-                        ->step('0.01'),
+                        ->step('0.01')
+                        ->default(0),
 
                     Forms\Components\Select::make('lineasNegocio')
                         ->label('Líneas de Negocio')

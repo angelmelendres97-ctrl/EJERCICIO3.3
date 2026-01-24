@@ -454,6 +454,43 @@ class AsignacionProveedorResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')->label('ID')->sortable(),
+                Tables\Columns\TextColumn::make('amdg_id_empresa')
+                    ->label('Empresa')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saeempr')
+                                ->where('empr_cod_empr', $state)
+                                ->value('empr_nom_empr') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('amdg_id_sucursal')
+                    ->label('Sucursal')
+                    ->formatStateUsing(function ($state, $record) {
+                        if (!$state)
+                            return $state;
+                        $connectionName = self::getExternalConnectionName($record->id_empresa);
+                        if (!$connectionName)
+                            return $state;
+                        try {
+                            return DB::connection($connectionName)
+                                ->table('saesucu')
+                                ->where('sucu_cod_empr', $record->amdg_id_empresa)
+                                ->where('sucu_cod_sucu', $state)
+                                ->value('sucu_nom_sucu') ?? $state;
+                        } catch (\Exception $e) {
+                            return $state;
+                        }
+                    })
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('fecha_pedido')->date()->label('Fecha'),
                 Tables\Columns\TextColumn::make('proveniencia')
                     ->label('Proveedor Referencial')
@@ -489,8 +526,20 @@ class AsignacionProveedorResource extends Resource
                     ->label('Comparativo')
                     ->icon('heroicon-o-scale')
                     ->color('danger')
-                    ->visible(fn(Proforma $record) => $record->estado === 'Comparativo Precios')
+                    ->visible(fn(Proforma $record) => in_array($record->estado, ['Comparativo Precios', 'Proforma Terminada']))
                     ->url(fn(Proforma $record) => Pages\ComparativoProveedores::getUrl(['record' => $record])),
+                Tables\Actions\Action::make('aprobacion_compra')
+                    ->label('Aprobación Proveedores')
+                    ->icon('heroicon-o-check-badge')
+                    ->color('success')
+                    ->visible(fn(Proforma $record) => $record->estado === 'Comparativo Precios')
+                    ->url(fn(Proforma $record) => Pages\AprobacionCompra::getUrl(['record' => $record])),
+                Tables\Actions\Action::make('ver_aprobacion_final')
+                    ->label('Ver Aprobación')
+                    ->icon('heroicon-o-check-badge')
+                    ->color('success')
+                    ->visible(fn(Proforma $record) => $record->estado === 'Proforma Terminada')
+                    ->url(fn(Proforma $record) => Pages\AprobacionCompra::getUrl(['record' => $record])),
             ])
             ->bulkActions([]);
     }
@@ -506,6 +555,7 @@ class AsignacionProveedorResource extends Resource
             'index' => Pages\ListAsignacionProveedors::route('/'),
             'edit' => Pages\EditAsignacionProveedor::route('/{record}/edit'),
             'comparativo' => Pages\ComparativoProveedores::route('/{record}/comparativo'),
+            'aprobacion_compra' => Pages\AprobacionCompra::route('/{record}/aprobacion-compra'),
         ];
     }
 }
