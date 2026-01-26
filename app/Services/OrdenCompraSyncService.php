@@ -396,9 +396,17 @@ class OrdenCompraSyncService
                     ->table('saedmov')
                     ->insert($datos_dmov);
 
-                $contador_dmov = intval($contador_dmov) + 1;
+            $contador_dmov = intval($contador_dmov) + 1;
 
-            }
+        }
+
+            self::actualizarEstadoPedidosPorConexion(
+                $conexionPgsql,
+                $amdg_id_empresa,
+                $amdg_id_sucursal,
+                self::normalizePedidosImportados($pedidos_importados),
+                'Atendido'
+            );
 
             DB::connection($conexionPgsql)->commit();
 
@@ -412,6 +420,57 @@ class OrdenCompraSyncService
 
     }
 
+    public static function actualizarEstadoPedidos(Model $record, ?array $pedidoIds = null, string $estado = 'Pendiente'): void
+    {
+        $conexionPgsql = OrdenCompraResource::getExternalConnectionName($record->id_empresa);
+        if (!$conexionPgsql) {
+            Log::warning('No se pudo establecer conexión externa para actualizar estado de pedidos.');
+            return;
+        }
+
+        $pedidos = $pedidoIds ?? self::normalizePedidosImportados($record->pedidos_importados);
+
+        self::actualizarEstadoPedidosPorConexion(
+            $conexionPgsql,
+            $record->amdg_id_empresa,
+            $record->amdg_id_sucursal,
+            $pedidos,
+            $estado
+        );
+    }
+
+    private static function actualizarEstadoPedidosPorConexion(
+        string $conexionPgsql,
+        int $amdgIdEmpresa,
+        int $amdgIdSucursal,
+        array $pedidoIds,
+        string $estado
+    ): void {
+        if (empty($pedidoIds)) {
+            return;
+        }
+
+        DB::connection($conexionPgsql)
+            ->table('saepedi')
+            ->where('pedi_cod_empr', $amdgIdEmpresa)
+            ->where('pedi_cod_sucu', $amdgIdSucursal)
+            ->whereIn('pedi_cod_pedi', $pedidoIds)
+            ->update(['pedi_est_pedi' => $estado]);
+    }
+
+    private static function normalizePedidosImportados(?string $value): array
+    {
+        if (empty($value)) {
+            return [];
+        }
+
+        return collect(preg_split('/\\s*,\\s*/', trim((string) $value)))
+            ->filter()
+            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
+            ->filter(fn($pedido) => $pedido > 0)
+            ->values()
+            ->all();
+    }
 
     public static function eliminar(Model $record): void
     {
@@ -524,6 +583,13 @@ class OrdenCompraSyncService
 
             }
 
+            self::actualizarEstadoPedidosPorConexion(
+                $conexionPgsql,
+                $amdg_id_empresa,
+                $amdg_id_sucursal,
+                self::normalizePedidosImportados($pedidos_importados),
+                'Pendiente'
+            );
 
             foreach ($sql_data_saeminv as $key1 => $data_saeminv) {
                 $minv_num_comp = $data_saeminv->minv_num_comp ?? 0;

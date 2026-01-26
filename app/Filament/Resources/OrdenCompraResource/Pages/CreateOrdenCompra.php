@@ -93,10 +93,7 @@ class CreateOrdenCompra extends CreateRecord
 
         $pedidosUnicos = array_values(array_unique(array_merge($pedidosExistentes, $pedidosNormalizados)));
 
-        $this->data['pedidos_importados'] = implode(', ', array_map(
-            fn($pedi) => str_pad($pedi, 8, "0", STR_PAD_LEFT),
-            $pedidosUnicos
-        ));
+        $this->data['pedidos_importados'] = $pedidosUnicos;
 
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
@@ -301,18 +298,7 @@ class CreateOrdenCompra extends CreateRecord
 
     private function normalizePedidosImportados(array|string|null $pedidos): array
     {
-        if (empty($pedidos)) {
-            return [];
-        }
-
-        $lista = is_array($pedidos) ? $pedidos : preg_split('/\\s*,\\s*/', trim((string) $pedidos));
-
-        return collect($lista)
-            ->filter()
-            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-            ->filter(fn($pedido) => $pedido > 0)
-            ->values()
-            ->all();
+        return OrdenCompraResource::normalizePedidosImportados($pedidos);
     }
 
     private function mergeDetalleItems(array $existingItems, array $newItems): array

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\OrdenCompraResource\Pages;
 
 use App\Filament\Resources\OrdenCompraResource;
+use App\Services\OrdenCompraSyncService;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\DB;
 use App\Models\PedidoCompra;
@@ -13,6 +14,7 @@ use Filament\Actions;
 class EditOrdenCompra extends EditRecord
 {
     protected static string $resource = OrdenCompraResource::class;
+    protected array $pedidosOriginales = [];
 
     protected function getListeners(): array
     {
@@ -27,7 +29,12 @@ class EditOrdenCompra extends EditRecord
             Actions\DeleteAction::make()
                 ->visible(fn() => OrdenCompraResource::canDelete($this->record))
                 ->authorize(fn() => OrdenCompraResource::canDelete($this->record))
-                ->disabled(fn() => $this->record->anulada),
+                ->disabled(fn() => $this->record->anulada)
+                ->action(function () {
+                    OrdenCompraSyncService::eliminar($this->record);
+                    OrdenCompraSyncService::actualizarEstadoPedidos($this->record, null, 'Pendiente');
+                    $this->record->delete();
+                }),
         ];
     }
 
@@ -39,9 +46,9 @@ class EditOrdenCompra extends EditRecord
             return;
         }
 
-        $pedidosImportadosActuales = array_filter(explode(', ', $this->data['pedidos_importados'] ?? ''));
-        $nuevosPedidos = array_map(fn($p) => str_pad($p, 8, "0", STR_PAD_LEFT), $pedidos);
-        $this->data['pedidos_importados'] = implode(', ', array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
+        $pedidosImportadosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
+        $nuevosPedidos = $this->parsePedidosImportados($pedidos);
+        $this->data['pedidos_importados'] = array_values(array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
 
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
@@ -91,6 +98,8 @@ class EditOrdenCompra extends EditRecord
                 'dped_cod_prod' => $first->dped_cod_prod,
                 'cantidad_pendiente' => $cantidadPedida - $cantidadEntregada,
                 'dped_cod_bode' => $first->dped_cod_bode,
+                'pedido_codigo' => $first->dped_cod_pedi ?? null,
+                'pedido_detalle_id' => $first->dped_cod_dped ?? null,
                 'es_auxiliar' => $this->isAuxiliarItem($first),
                 'es_servicio' => $this->isServicioItem($first->dped_cod_prod ?? null),
                 'auxiliar_codigo' => $first->dped_cod_auxiliar ?? null,
@@ -181,6 +190,8 @@ class EditOrdenCompra extends EditRecord
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
+                    'pedido_codigo' => $detalle->pedido_codigo,
+                    'pedido_detalle_id' => $detalle->pedido_detalle_id,
                     'cantidad' => $detalle->cantidad_pendiente,
                     'costo' => $costo,
                     'descuento' => 0,
@@ -246,18 +257,9 @@ class EditOrdenCompra extends EditRecord
             || !empty($item->dped_desc_axiliar);
     }
 
-    private function parsePedidosImportados(?string $value): array
+    private function parsePedidosImportados(array|string|null $value): array
     {
-        if (!$value) {
-            return [];
-        }
-
-        return collect(preg_split('/\\s*,\\s*/', trim($value)))
-            ->filter()
-            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-            ->filter(fn($pedido) => $pedido > 0)
-            ->values()
-            ->all();
+        return OrdenCompraResource::normalizePedidosImportados($value);
     }
 
     private function applySolicitadoPor(string $connectionName, array $pedidos): void
@@ -304,6 +306,26 @@ class EditOrdenCompra extends EditRecord
         }
 
         return $data;
+    }
+
+    protected function beforeSave(): void
+    {
+        $this->pedidosOriginales = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
+    }
+
+    protected function afterSave(): void
+    {
+        $pedidosActuales = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
+        $agregados = array_values(array_diff($pedidosActuales, $this->pedidosOriginales));
+        $eliminados = array_values(array_diff($this->pedidosOriginales, $pedidosActuales));
+
+        if (!empty($agregados)) {
+            OrdenCompraSyncService::actualizarEstadoPedidos($this->record, $agregados, 'Atendido');
+        }
+
+        if (!empty($eliminados)) {
+            OrdenCompraSyncService::actualizarEstadoPedidos($this->record, $eliminados, 'Pendiente');
+        }
     }
 
     protected function getSaveFormAction(): Action
