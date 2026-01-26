@@ -154,21 +154,16 @@ class EditOrdenCompra extends EditRecord
             'motivo' => $motivo,
         ]);
 
-        if (empty($pedidos) || !$connectionId) {
-            return;
-        }
-
         // -----------------------------
         // 1) Normalizar pedidos (sin ceros a la izquierda)
         // -----------------------------
-        $pedidosImportadosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
         $pedidosSeleccionados = $this->parsePedidosImportados($pedidos);
 
         $normalizePedido = fn($p) => (ltrim((string) $p, '0') === '') ? '0' : ltrim((string) $p, '0');
 
         $pedidosSeleccionadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosSeleccionados)));
-        $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $pedidosSeleccionados)));
-        $pedidosUnicosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosUnicos)));
+        $pedidosUnicos = $pedidosSeleccionados;
+        $pedidosUnicosNorm = $pedidosSeleccionadosNorm;
 
         $this->data['pedidos_importados'] = $pedidosUnicos;
 
@@ -196,6 +191,13 @@ class EditOrdenCompra extends EditRecord
         }
 
         $this->data['detalles'] = $existingItems;
+
+        if (empty($pedidosUnicosNorm)) {
+            $this->recalculateTotals();
+            $this->form->fill($this->data);
+            $this->dispatch('close-modal', id: 'importar_pedido');
+            return;
+        }
 
         // -----------------------------
         // 3) conexión externa
