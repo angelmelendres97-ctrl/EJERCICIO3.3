@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 
 class OrdenCompraSyncService
 {
+    public const ESTADO_PROCESADO = 4;
     /**
      * Sincroniza los datos del producto con las tablas externas (saeprod, saeprbo)
      * en cada una de las bases de datos PostgreSQL seleccionadas.
@@ -405,7 +406,7 @@ class OrdenCompraSyncService
                 $amdg_id_empresa,
                 $amdg_id_sucursal,
                 self::normalizePedidosImportados($pedidos_importados),
-                'Atendido'
+                self::ESTADO_PROCESADO
             );
 
             DB::connection($conexionPgsql)->commit();
