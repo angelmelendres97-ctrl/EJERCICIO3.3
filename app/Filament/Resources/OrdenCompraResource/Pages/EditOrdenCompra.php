@@ -10,6 +10,7 @@ use App\Models\PedidoCompra;
 use Illuminate\Support\Facades\Log;
 use Filament\Actions\Action;
 use Filament\Actions;
+use App\Models\DetalleOrdenCompra;
 
 class EditOrdenCompra extends EditRecord
 {
@@ -30,6 +31,61 @@ class EditOrdenCompra extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['info_proveedor'] = $data['id_proveedor'] ?? null;
+
+        $detalles = $data['detalles'] ?? [];
+        $connectionName = null;
+        $detalleLookup = [];
+
+        if (!empty($detalles)) {
+            $empresaId = $data['id_empresa'] ?? null;
+            if ($empresaId) {
+                $connectionName = OrdenCompraResource::getExternalConnectionName($empresaId);
+            }
+
+            if ($connectionName) {
+                $pedidoCodigos = collect($detalles)
+                    ->pluck('pedido_codigo')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $detalleIds = collect($detalles)
+                    ->pluck('pedido_detalle_id')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if (!empty($pedidoCodigos) && !empty($detalleIds)) {
+                    $detalleLookup = DB::connection($connectionName)
+                        ->table('saedped')
+                        ->whereIn('dped_cod_pedi', $pedidoCodigos)
+                        ->whereIn('dped_cod_dped', $detalleIds)
+                        ->when(
+                            !empty($data['amdg_id_empresa']) && !empty($data['amdg_id_sucursal']),
+                            fn($query) => $query
+                                ->where('dped_cod_empr', $data['amdg_id_empresa'])
+                                ->where('dped_cod_sucu', $data['amdg_id_sucursal'])
+                        )
+                        ->select([
+                            'dped_cod_pedi',
+                            'dped_cod_dped',
+                            'dped_det_dped',
+                            'dped_cod_auxiliar',
+                            'dped_desc_auxiliar',
+                            'dped_desc_axiliar',
+                            'dped_cod_prod',
+                        ])
+                        ->get()
+                        ->mapWithKeys(function ($row) {
+                            $key = ((int) $row->dped_cod_pedi) . ':' . ((int) $row->dped_cod_dped);
+                            return [$key => $row];
+                        })
+                        ->all();
+                }
+            }
+        }
 
         if (isset($data['detalles']) && is_array($data['detalles'])) {
             foreach ($data['detalles'] as $index => $detalle) {
@@ -64,6 +120,35 @@ class EditOrdenCompra extends EditRecord
                         $servicioDescripcion ? self::SERVICIO_DESCRIPCION_LABEL . $servicioDescripcion : null,
                     ])->filter()->implode(' | '));
                 }
+
+                $pedidoCodigo = $detalle['pedido_codigo'] ?? null;
+                $pedidoDetalleId = $detalle['pedido_detalle_id'] ?? null;
+                $lookupKey = $pedidoCodigo && $pedidoDetalleId
+                    ? ((int) $pedidoCodigo) . ':' . ((int) $pedidoDetalleId)
+                    : null;
+                $detalleDb = $lookupKey ? ($detalleLookup[$lookupKey] ?? null) : null;
+
+                if (empty($detalle['detalle_pedido']) && $detalleDb?->dped_det_dped) {
+                    $data['detalles'][$index]['detalle_pedido'] = trim((string) $detalleDb->dped_det_dped);
+                }
+
+                if ($esAuxiliar && empty($data['detalles'][$index]['producto_auxiliar'])) {
+                    $auxiliarNombre = $detalleDb?->dped_desc_auxiliar
+                        ?? $detalleDb?->dped_desc_axiliar
+                        ?? $detalleDb?->dped_det_dped;
+
+                    $data['detalles'][$index]['producto_auxiliar'] = trim(collect([
+                        $detalleDb?->dped_cod_auxiliar ? self::AUXILIAR_LABEL . $detalleDb->dped_cod_auxiliar : null,
+                        $auxiliarNombre ? self::AUXILIAR_NOMBRE_LABEL . $auxiliarNombre : null,
+                    ])->filter()->implode(' | '));
+                }
+
+                if ($esServicio && empty($data['detalles'][$index]['producto_servicio'])) {
+                    $data['detalles'][$index]['producto_servicio'] = trim(collect([
+                        $codigoProducto ? self::SERVICIO_CODIGO_LABEL . $codigoProducto : null,
+                        $detalleDb?->dped_det_dped ? self::SERVICIO_DESCRIPCION_LABEL . $detalleDb->dped_det_dped : null,
+                    ])->filter()->implode(' | '));
+                }
             }
         }
 
@@ -95,7 +180,8 @@ class EditOrdenCompra extends EditRecord
 
         $pedidosImportadosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
         $nuevosPedidos = $this->parsePedidosImportados($pedidos);
-        $this->data['pedidos_importados'] = array_values(array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
+        $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
+        $this->data['pedidos_importados'] = $pedidosUnicos;
 
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
@@ -108,9 +194,18 @@ class EditOrdenCompra extends EditRecord
 
         $detalles = DB::connection($connectionName)
             ->table('saedped')
-            ->whereIn('dped_cod_pedi', $pedidos)
+            ->whereIn('dped_cod_pedi', $pedidosUnicos)
+            ->where('dped_cod_empr', $this->data['amdg_id_empresa'])
+            ->where('dped_cod_sucu', $this->data['amdg_id_sucursal'])
             ->whereColumn('dped_can_ped', '>', 'dped_can_ent')
             ->get();
+
+        $pairs = $detalles->map(fn($d) => [
+            'pedido_codigo'      => (int) $d->dped_cod_pedi,
+            'pedido_detalle_id'  => (int) $d->dped_cod_dped,
+        ])->values()->all();
+
+        $importadoPorDetalle = $this->resolveImportadoPorDetalle($pairs);
 
         $detallesAgrupados = $detalles->values()->groupBy(function ($item, $key) {
             $codigoProducto = $item->dped_cod_prod ?? null;
@@ -136,10 +231,13 @@ class EditOrdenCompra extends EditRecord
             }
 
             return 'aux-' . ($item->dped_det_dped ?? uniqid('', true));
-        })->map(function ($group) {
+        })->map(function ($group) use ($importadoPorDetalle) {
             $first = $group->first();
             $cantidadPedida = $group->sum(fn($i) => (float)$i->dped_can_ped);
-            $cantidadEntregada = $group->sum(fn($i) => (float)$i->dped_can_ent);
+            $cantidadEntregada = $group->sum(function ($i) use ($importadoPorDetalle) {
+                $key = ((int) $i->dped_cod_pedi) . ':' . ((int) $i->dped_cod_dped);
+                return (float) ($importadoPorDetalle[$key] ?? 0);
+            });
             $codigoProducto = $first->dped_cod_prod ?? null;
             return (object) [
                 'dped_cod_prod' => $first->dped_cod_prod,
@@ -247,9 +345,8 @@ class EditOrdenCompra extends EditRecord
                 ];
             })->values()->toArray();
 
-            // Filter out blank rows from existing details before merging
-            $existingItems = array_filter($this->data['detalles'] ?? [], fn($item) => !empty($item['codigo_producto']));
-            $this->data['detalles'] = array_merge($existingItems, $repeaterItems);
+            $existingItems = $this->data['detalles'] ?? [];
+            $this->data['detalles'] = $this->mergeDetalleItems($existingItems, $repeaterItems);
             
             // Recalculate totals after merging
             $this->recalculateTotals();
@@ -307,6 +404,102 @@ class EditOrdenCompra extends EditRecord
     private function parsePedidosImportados(array|string|null $value): array
     {
         return OrdenCompraResource::normalizePedidosImportados($value);
+    }
+
+    private function mergeDetalleItems(array $existingItems, array $newItems): array
+    {
+        $merged = [];
+        $usedKeys = [];
+
+        foreach ($existingItems as $index => $item) {
+            $key = $this->detalleKey($item, $index);
+            $usedKeys[$key] = true;
+            $merged[] = $item;
+        }
+
+        foreach ($newItems as $index => $item) {
+            $key = $this->detalleKey($item, $index);
+            if (isset($usedKeys[$key])) {
+                continue;
+            }
+            $usedKeys[$key] = true;
+            $merged[] = $item;
+        }
+
+        return $merged;
+    }
+
+    private function detalleKey(array $item, int $index): string
+    {
+        $pedidoCodigo = $item['pedido_codigo'] ?? null;
+        $pedidoDetalleId = $item['pedido_detalle_id'] ?? null;
+
+        if ($pedidoCodigo && $pedidoDetalleId) {
+            return sprintf('pedido:%s:%s', $pedidoCodigo, $pedidoDetalleId);
+        }
+
+        $codigoProducto = $item['codigo_producto'] ?? null;
+        $bodega = $item['id_bodega'] ?? null;
+        $detalle = $item['detalle'] ?? null;
+        $descripcion = $item['producto'] ?? null;
+
+        return sprintf(
+            'manual:%s:%s:%s:%s:%s',
+            $index,
+            $codigoProducto,
+            $bodega,
+            $detalle,
+            $descripcion
+        );
+    }
+
+    private function resolveImportadoPorDetalle(array $pedidoDetallePairs): array
+    {
+        if (empty($pedidoDetallePairs)) {
+            return [];
+        }
+
+        $pedidoCodigos = collect($pedidoDetallePairs)->pluck('pedido_codigo')->filter()->unique()->values()->all();
+        $detalleIds    = collect($pedidoDetallePairs)->pluck('pedido_detalle_id')->filter()->unique()->values()->all();
+
+        if (empty($pedidoCodigos) || empty($detalleIds)) {
+            return [];
+        }
+
+        $idEmpresa   = $this->data['id_empresa'] ?? null;
+        $amdgEmpresa = $this->data['amdg_id_empresa'] ?? null;
+        $amdgSucu    = $this->data['amdg_id_sucursal'] ?? null;
+
+        $rows = DetalleOrdenCompra::query()
+            ->select([
+                'pedido_codigo',
+                'pedido_detalle_id',
+                DB::raw('SUM(cantidad) as cantidad_importada'),
+            ])
+            ->whereIn('pedido_codigo', $pedidoCodigos)
+            ->whereIn('pedido_detalle_id', $detalleIds)
+            ->whereHas('ordenCompra', function ($q) use ($idEmpresa, $amdgEmpresa, $amdgSucu) {
+                $q->where('anulada', false);
+
+                if ($idEmpresa) {
+                    $q->where('id_empresa', $idEmpresa);
+                }
+
+                if ($amdgEmpresa) {
+                    $q->where('amdg_id_empresa', $amdgEmpresa);
+                }
+
+                if ($amdgSucu) {
+                    $q->where('amdg_id_sucursal', $amdgSucu);
+                }
+            })
+            ->groupBy('pedido_codigo', 'pedido_detalle_id')
+            ->get();
+
+        return $rows->mapWithKeys(function ($row) {
+            $key = ((int) $row->pedido_codigo) . ':' . ((int) $row->pedido_detalle_id);
+            return [$key => (float) $row->cantidad_importada];
+        })->all();
     }
 
     private function decodeDetalleData(null|string|array $detalle): array
@@ -392,6 +585,6 @@ class EditOrdenCompra extends EditRecord
 
     protected function getSaveFormAction(): Action
     {
-        return parent::getSaveFormAction()->hidden();
+        return parent::getSaveFormAction();
     }
 }
