@@ -128,6 +128,61 @@ class OrdenCompraResource extends Resource
         ];
     }
 
+    public static function normalizePedidosImportados(array|string|null $pedidos): array
+    {
+        if (empty($pedidos)) {
+            return [];
+        }
+
+        $lista = is_array($pedidos) ? $pedidos : preg_split('/\\s*,\\s*/', trim((string) $pedidos));
+
+        return collect($lista)
+            ->filter()
+            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
+            ->filter(fn($pedido) => $pedido > 0)
+            ->values()
+            ->all();
+    }
+
+    public static function formatPedidosImportados(array|string|null $pedidos): string
+    {
+        $normalizados = self::normalizePedidosImportados($pedidos);
+
+        return implode(', ', array_map(
+            fn($pedi) => str_pad((string) $pedi, 8, '0', STR_PAD_LEFT),
+            $normalizados
+        ));
+    }
+
+    protected static function calculateTotals(array $detalles): array
+    {
+        $subtotalGeneral = 0;
+        $descuentoGeneral = 0;
+        $impuestoGeneral = 0;
+
+        foreach ($detalles as $detalle) {
+            $cantidad = floatval($detalle['cantidad'] ?? 0);
+            $costo = floatval($detalle['costo'] ?? 0);
+            $descuento = floatval($detalle['descuento'] ?? 0);
+            $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
+
+            $subtotalItem = $cantidad * $costo;
+            $baseNeta = max(0, $subtotalItem - $descuento);
+            $impuestoGeneral += $baseNeta * ($porcentajeIva / 100);
+            $subtotalGeneral += $subtotalItem;
+            $descuentoGeneral += $descuento;
+        }
+
+        $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
+
+        return [
+            'subtotal' => number_format($subtotalGeneral, 2, '.', ''),
+            'total_descuento' => number_format($descuentoGeneral, 2, '.', ''),
+            'total_impuesto' => number_format($impuestoGeneral, 2, '.', ''),
+            'total' => number_format($totalGeneral, 2, '.', ''),
+        ];
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -230,7 +285,7 @@ class OrdenCompraResource extends Resource
                                 $id_empresa = $get('id_empresa');
                                 $amdg_id_empresa = $get('amdg_id_empresa');
                                 $amdg_id_sucursal = $get('amdg_id_sucursal');
-                                $pedidos_importados = $get('pedidos_importados');
+                                $pedidos_importados = self::formatPedidosImportados($get('pedidos_importados'));
 
                                 return view('livewire.buscar-pedidos-compra-container', compact(
                                     'id_empresa',
@@ -246,9 +301,33 @@ class OrdenCompraResource extends Resource
                     ])
                     ->schema([
 
-                        Forms\Components\TextInput::make('pedidos_importados')
+                        Forms\Components\Select::make('pedidos_importados')
                             ->label('Pedidos Importados')
-                            ->readOnly()
+                            ->multiple()
+                            ->options(fn(Get $get) => collect(self::normalizePedidosImportados($get('pedidos_importados')))
+                                ->mapWithKeys(fn($pedido) => [$pedido => str_pad((string) $pedido, 8, '0', STR_PAD_LEFT)])
+                                ->all())
+                            ->formatStateUsing(fn($state) => self::normalizePedidosImportados($state))
+                            ->dehydrateStateUsing(fn($state) => self::formatPedidosImportados($state))
+                            ->afterStateUpdated(function (Set $set, Get $get, $state) {
+                                $pedidosSeleccionados = self::normalizePedidosImportados($state);
+                                $detalles = $get('detalles') ?? [];
+                                $detallesFiltrados = array_values(array_filter(
+                                    $detalles,
+                                    fn($detalle) => empty($detalle['pedido_codigo'])
+                                        || in_array((int) $detalle['pedido_codigo'], $pedidosSeleccionados, true)
+                                ));
+
+                                if (count($detallesFiltrados) !== count($detalles)) {
+                                    $set('detalles', $detallesFiltrados);
+                                }
+
+                                $totales = self::calculateTotals($detallesFiltrados);
+                                $set('subtotal', $totales['subtotal']);
+                                $set('total_descuento', $totales['total_descuento']);
+                                $set('total_impuesto', $totales['total_impuesto']);
+                                $set('total', $totales['total']);
+                            })
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('uso_compra')
@@ -1008,6 +1087,9 @@ class OrdenCompraResource extends Resource
 
             ])
             ->actions([
+                Tables\Actions\EditAction::make()
+                    ->label('Editar')
+                    ->visible(fn(OrdenCompra $record) => self::canEdit($record)),
 
                 Tables\Actions\Action::make('pdf')
                     ->label('PDF')
@@ -1042,6 +1124,8 @@ class OrdenCompraResource extends Resource
                     ->action(function (OrdenCompra $record) {
                         $record->update(['anulada' => true]);
 
+                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, 'Pendiente');
+
                         Notification::make()
                             ->title('Orden de compra anulada')
                             ->success()
@@ -1053,6 +1137,11 @@ class OrdenCompraResource extends Resource
                     ->requiresConfirmation()
                     ->visible(fn(OrdenCompra $record) => self::userIsAdmin())
                     ->authorize(fn() => self::userIsAdmin())
+                    ->action(function (OrdenCompra $record) {
+                        \App\Services\OrdenCompraSyncService::eliminar($record);
+                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, 'Pendiente');
+                        $record->delete();
+                    })
                 //->disabled(fn(OrdenCompra $record) => $record->anulada),
 
             ])
