@@ -574,7 +574,98 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('detalle_pedido')
                                             ->label('Detalle del pedido')
                                             ->disabled()
-                                            ->dehydrated(false)
+                                            ->dehydrated(false) // no se guarda en tu tabla local
+                                            ->afterStateHydrated(function (Set $set, Get $get, $state) {
+
+                                                // Si ya tiene valor, no hacemos nada
+                                                if (filled($state)) {
+                                                    return;
+                                                }
+
+                                                $empresaId = $get('../../id_empresa');
+                                                $amdgEmpresa = $get('../../amdg_id_empresa');
+                                                $amdgSucu = $get('../../amdg_id_sucursal');
+
+                                                $pedidoCodigo = $get('pedido_codigo');
+                                                $pedidoDetalleId = $get('pedido_detalle_id');
+
+                                                if (!$empresaId || !$amdgEmpresa || !$amdgSucu || !$pedidoCodigo || !$pedidoDetalleId) {
+                                                    return;
+                                                }
+
+                                                $connectionName = \App\Filament\Resources\OrdenCompraResource::getExternalConnectionName((int) $empresaId);
+                                                if (!$connectionName) {
+                                                    return;
+                                                }
+
+                                                $schema = DB::connection($connectionName)->getSchemaBuilder();
+
+                                                $cols = [
+                                                    'dped_det_dped',
+                                                    'dped_cod_auxiliar',
+                                                    'dped_desc_auxiliar',
+                                                    'dped_cod_prod',
+                                                ];
+
+                                                // Algunas bases tienen columnas con nombres distintos (o no las tienen)
+                                                if ($schema->hasColumn('saedped', 'dped_desc_axiliar')) { // si existiera con x
+                                                    $cols[] = 'dped_desc_axiliar';
+                                                }
+
+                                                $row = DB::connection($connectionName)
+                                                    ->table('saedped')
+                                                    ->where('dped_cod_pedi', (int) $pedidoCodigo)
+                                                    ->where('dped_cod_dped', (int) $pedidoDetalleId)
+                                                    ->select($cols)
+                                                    ->first();
+
+                                                if (!$row) {
+                                                    return;
+                                                }
+
+                                                // Usa solo lo que exista (si no existe dped_desc_axiliar, quedará null)
+                                                $descAux = $row->dped_desc_auxiliar
+                                                    ?? ($schema->hasColumn('saedped', 'dped_desc_axiliar') ? ($row->dped_desc_axiliar ?? null) : null);
+
+                                                // 1) Detalle del pedido
+                                                $detallePedido = trim((string) ($row->dped_det_dped ?? ''));
+                                                $set('detalle_pedido', $detallePedido !== '' ? $detallePedido : null);
+
+                                                // 2) Auxiliar (helper)
+                                                $esAuxiliar = !empty($row->dped_cod_auxiliar) || !empty($row->dped_desc_auxiliar) || !empty($row->dped_desc_axiliar);
+                                                $set('es_auxiliar', $esAuxiliar);
+
+                                                if ($esAuxiliar) {
+                                                    $descAux = $row->dped_desc_auxiliar ?? $row->dped_desc_axiliar;
+                                                    $auxTxt = trim(collect([
+                                                        $row->dped_cod_auxiliar ? 'Código: ' . $row->dped_cod_auxiliar : null,
+                                                        $descAux ? 'Nombre: ' . $descAux : null,
+                                                    ])->filter()->implode(' | '));
+
+                                                    $set('producto_auxiliar', $auxTxt ?: null);
+
+                                                    // También deja listo el JSON "detalle" si lo usas en otras partes
+                                                    $set('detalle', json_encode([
+                                                        'codigo' => $row->dped_cod_auxiliar,
+                                                        'descripcion' => $row->dped_det_dped,
+                                                        'descripcion_auxiliar' => $descAux,
+                                                    ], JSON_UNESCAPED_UNICODE));
+                                                }
+
+                                                // 3) Servicio (helper)
+                                                $codigoProd = (string) ($row->dped_cod_prod ?? '');
+                                                $esServicio = (bool) preg_match('/^SP[-\\s]*SP[-\\s]*SP/i', $codigoProd);
+                                                $set('es_servicio', $esServicio);
+
+                                                if ($esServicio) {
+                                                    $srvTxt = trim(collect([
+                                                        $codigoProd ? 'Código servicio: ' . $codigoProd : null,
+                                                        $detallePedido ? 'Descripción: ' . $detallePedido : null,
+                                                    ])->filter()->implode(' | '));
+
+                                                    $set('producto_servicio', $srvTxt ?: null);
+                                                }
+                                            })
                                             ->visible(fn(Get $get) => filled($get('detalle_pedido')))
                                             ->columnSpan(['default' => 12, 'lg' => 14]),
 
