@@ -41,6 +41,94 @@ class OrdenCompraResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
+    public static function normalizePedidosImportados(array|string|null $pedidos): array
+    {
+        if (empty($pedidos)) {
+            return [];
+        }
+
+        $lista = is_array($pedidos) ? $pedidos : preg_split('/\s*,\s*/', trim((string) $pedidos));
+
+        return collect($lista)
+            ->filter()
+            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
+            ->filter(fn($pedido) => $pedido > 0)
+            ->values()
+            ->all();
+    }
+
+    public static function formatPedidosImportados(array|string|null $pedidos): ?string
+    {
+        $lista = self::normalizePedidosImportados($pedidos);
+
+        if (empty($lista)) {
+            return null;
+        }
+
+        return implode(', ', array_map(
+            fn($pedido) => str_pad((string) $pedido, 8, '0', STR_PAD_LEFT),
+            $lista
+        ));
+    }
+
+    public static function buildPedidosOptions(array|string|null $pedidos): array
+    {
+        $lista = self::normalizePedidosImportados($pedidos);
+
+        return collect($lista)
+            ->mapWithKeys(fn($pedido) => [
+                (string) $pedido => str_pad((string) $pedido, 8, '0', STR_PAD_LEFT),
+            ])
+            ->all();
+    }
+
+    public static function updatePedidosEstado(?int $empresaId, ?string $amdgEmpresa, ?string $amdgSucursal, array $pedidos, string $estado): void
+    {
+        if (!$empresaId || empty($pedidos)) {
+            return;
+        }
+
+        $connectionName = self::getExternalConnectionName($empresaId);
+        if (!$connectionName) {
+            return;
+        }
+
+        DB::connection($connectionName)
+            ->table('saepedi')
+            ->whereIn('pedi_cod_pedi', $pedidos)
+            ->when($amdgEmpresa, fn($query) => $query->where('pedi_cod_empr', $amdgEmpresa))
+            ->when($amdgSucursal, fn($query) => $query->where('pedi_cod_sucu', $amdgSucursal))
+            ->update(['pedi_est_pedi' => $estado]);
+    }
+
+    public static function calculateTotals(array $detalles): array
+    {
+        $subtotalGeneral = 0;
+        $descuentoGeneral = 0;
+        $impuestoGeneral = 0;
+
+        foreach ($detalles as $detalle) {
+            $cantidad = floatval($detalle['cantidad'] ?? 0);
+            $costo = floatval($detalle['costo'] ?? 0);
+            $descuento = floatval($detalle['descuento'] ?? 0);
+            $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
+            $subtotalItem = $cantidad * $costo;
+            $baseNeta = max(0, $subtotalItem - $descuento);
+            $impuestoGeneral += $baseNeta * ($porcentajeIva / 100);
+            $subtotalGeneral += $subtotalItem;
+            $descuentoGeneral += $descuento;
+        }
+
+        $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
+
+        return [
+            'subtotal' => number_format($subtotalGeneral, 2, '.', ''),
+            'total_descuento' => number_format($descuentoGeneral, 2, '.', ''),
+            'total_impuesto' => number_format($impuestoGeneral, 2, '.', ''),
+            'total' => number_format($totalGeneral, 2, '.', ''),
+        ];
+    }
+
     public static function userIsAdmin(): bool
     {
         $user = auth()->user();
@@ -246,9 +334,42 @@ class OrdenCompraResource extends Resource
                     ])
                     ->schema([
 
-                        Forms\Components\TextInput::make('pedidos_importados')
+                        Forms\Components\Select::make('pedidos_importados')
                             ->label('Pedidos Importados')
-                            ->readOnly()
+                            ->options(fn(Get $get) => self::buildPedidosOptions($get('pedidos_importados') ?? []))
+                            ->multiple()
+                            ->searchable()
+                            ->placeholder('Sin pedidos importados')
+                            ->live()
+                            ->afterStateHydrated(function (Set $set, $state) {
+                                $set('pedidos_importados', self::normalizePedidosImportados($state));
+                            })
+                            ->afterStateUpdated(function (Set $set, Get $get, ?array $state, ?array $old) {
+                                $nuevos = self::normalizePedidosImportados($state);
+                                $anteriores = self::normalizePedidosImportados($old);
+                                $removidos = array_values(array_diff($anteriores, $nuevos));
+
+                                if (empty($removidos)) {
+                                    return;
+                                }
+
+                                $detalles = collect($get('detalles') ?? [])
+                                    ->reject(function ($detalle) use ($removidos) {
+                                        $pedidoCodigo = (int) ($detalle['pedido_codigo'] ?? 0);
+                                        return $pedidoCodigo && in_array($pedidoCodigo, $removidos, true);
+                                    })
+                                    ->values()
+                                    ->all();
+
+                                $set('detalles', $detalles);
+
+                                $totales = self::calculateTotals($detalles);
+                                $set('subtotal', $totales['subtotal']);
+                                $set('total_descuento', $totales['total_descuento']);
+                                $set('total_impuesto', $totales['total_impuesto']);
+                                $set('total', $totales['total']);
+                            })
+                            ->dehydrateStateUsing(fn($state) => self::formatPedidosImportados($state))
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('uso_compra')
@@ -1008,6 +1129,9 @@ class OrdenCompraResource extends Resource
 
             ])
             ->actions([
+                Tables\Actions\EditAction::make()
+                    ->label('Editar')
+                    ->visible(fn(OrdenCompra $record) => self::canEdit($record)),
 
                 Tables\Actions\Action::make('pdf')
                     ->label('PDF')
@@ -1041,6 +1165,14 @@ class OrdenCompraResource extends Resource
                     ->visible(fn(OrdenCompra $record) => auth()->user()->can('Actualizar') && !$record->anulada)
                     ->action(function (OrdenCompra $record) {
                         $record->update(['anulada' => true]);
+                        $pedidos = self::normalizePedidosImportados($record->pedidos_importados);
+                        self::updatePedidosEstado(
+                            $record->id_empresa,
+                            $record->amdg_id_empresa,
+                            $record->amdg_id_sucursal,
+                            $pedidos,
+                            'Pendiente'
+                        );
 
                         Notification::make()
                             ->title('Orden de compra anulada')
@@ -1051,6 +1183,16 @@ class OrdenCompraResource extends Resource
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')
                     ->requiresConfirmation()
+                    ->before(function (OrdenCompra $record) {
+                        $pedidos = self::normalizePedidosImportados($record->pedidos_importados);
+                        self::updatePedidosEstado(
+                            $record->id_empresa,
+                            $record->amdg_id_empresa,
+                            $record->amdg_id_sucursal,
+                            $pedidos,
+                            'Pendiente'
+                        );
+                    })
                     ->visible(fn(OrdenCompra $record) => self::userIsAdmin())
                     ->authorize(fn() => self::userIsAdmin())
                 //->disabled(fn(OrdenCompra $record) => $record->anulada),

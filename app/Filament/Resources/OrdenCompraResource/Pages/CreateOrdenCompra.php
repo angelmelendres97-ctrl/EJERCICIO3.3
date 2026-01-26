@@ -39,6 +39,7 @@ class CreateOrdenCompra extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['id_usuario'] = $data['id_usuario'] ?? auth()->id();
+        $data['pedidos_importados'] = OrdenCompraResource::formatPedidosImportados($data['pedidos_importados'] ?? null);
         $newDetalles = [];
         if (isset($data['detalles']) && is_array($data['detalles'])) {
             foreach ($data['detalles'] as $detalle) {
@@ -76,6 +77,14 @@ class CreateOrdenCompra extends CreateRecord
     protected function afterCreate(): void
     {
         if ($this->record) {
+            $pedidos = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
+            OrdenCompraResource::updatePedidosEstado(
+                $this->record->id_empresa,
+                $this->record->amdg_id_empresa,
+                $this->record->amdg_id_sucursal,
+                $pedidos,
+                'Atendido'
+            );
             $this->dispatch('open-orden-compra-pdf', url: route('orden-compra.pdf', $this->record));
         }
     }
@@ -88,15 +97,12 @@ class CreateOrdenCompra extends CreateRecord
             return;
         }
 
-        $pedidosNormalizados = $this->normalizePedidosImportados($pedidos);
-        $pedidosExistentes = $this->normalizePedidosImportados($this->data['pedidos_importados'] ?? null);
+        $pedidosNormalizados = OrdenCompraResource::normalizePedidosImportados($pedidos);
+        $pedidosExistentes = OrdenCompraResource::normalizePedidosImportados($this->data['pedidos_importados'] ?? null);
 
         $pedidosUnicos = array_values(array_unique(array_merge($pedidosExistentes, $pedidosNormalizados)));
 
-        $this->data['pedidos_importados'] = implode(', ', array_map(
-            fn($pedi) => str_pad($pedi, 8, "0", STR_PAD_LEFT),
-            $pedidosUnicos
-        ));
+        $this->data['pedidos_importados'] = $pedidosUnicos;
 
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
@@ -297,22 +303,6 @@ class CreateOrdenCompra extends CreateRecord
                 'detalles' => 'Debe seleccionar un producto del inventario para cada ítem auxiliar o de servicio.',
             ]);
         }
-    }
-
-    private function normalizePedidosImportados(array|string|null $pedidos): array
-    {
-        if (empty($pedidos)) {
-            return [];
-        }
-
-        $lista = is_array($pedidos) ? $pedidos : preg_split('/\\s*,\\s*/', trim((string) $pedidos));
-
-        return collect($lista)
-            ->filter()
-            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-            ->filter(fn($pedido) => $pedido > 0)
-            ->values()
-            ->all();
     }
 
     private function mergeDetalleItems(array $existingItems, array $newItems): array
