@@ -259,13 +259,15 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
     }
 
 
-    private function parsePedidosImportados(?string $value): array
+    private function parsePedidosImportados(array|string|null $value): array
     {
-        if (!$value) {
+        if (empty($value)) {
             return [];
         }
 
-        return collect(preg_split('/\\s*,\\s*/', trim($value)))
+        $lista = is_array($value) ? $value : preg_split('/\\s*,\\s*/', trim((string) $value));
+
+        return collect($lista)
             ->filter()
             ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
             ->filter(fn($pedido) => $pedido > 0)

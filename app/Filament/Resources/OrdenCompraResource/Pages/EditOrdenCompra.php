@@ -13,6 +13,7 @@ use Filament\Actions;
 class EditOrdenCompra extends EditRecord
 {
     protected static string $resource = OrdenCompraResource::class;
+    protected array $previousPedidoData = [];
 
     protected function getListeners(): array
     {
@@ -25,6 +26,16 @@ class EditOrdenCompra extends EditRecord
     {
         return [
             Actions\DeleteAction::make()
+                ->before(function () {
+                    $pedidos = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
+                    OrdenCompraResource::updatePedidosEstado(
+                        $this->record->id_empresa,
+                        $this->record->amdg_id_empresa,
+                        $this->record->amdg_id_sucursal,
+                        $pedidos,
+                        'Pendiente'
+                    );
+                })
                 ->visible(fn() => OrdenCompraResource::canDelete($this->record))
                 ->authorize(fn() => OrdenCompraResource::canDelete($this->record))
                 ->disabled(fn() => $this->record->anulada),
@@ -39,9 +50,9 @@ class EditOrdenCompra extends EditRecord
             return;
         }
 
-        $pedidosImportadosActuales = array_filter(explode(', ', $this->data['pedidos_importados'] ?? ''));
-        $nuevosPedidos = array_map(fn($p) => str_pad($p, 8, "0", STR_PAD_LEFT), $pedidos);
-        $this->data['pedidos_importados'] = implode(', ', array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
+        $pedidosImportadosActuales = OrdenCompraResource::normalizePedidosImportados($this->data['pedidos_importados'] ?? null);
+        $nuevosPedidos = OrdenCompraResource::normalizePedidosImportados($pedidos);
+        $this->data['pedidos_importados'] = array_values(array_unique(array_merge($pedidosImportadosActuales, $nuevosPedidos)));
 
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
@@ -89,6 +100,7 @@ class EditOrdenCompra extends EditRecord
             $codigoProducto = $first->dped_cod_prod ?? null;
             return (object) [
                 'dped_cod_prod' => $first->dped_cod_prod,
+                'pedido_codigo' => $first->dped_cod_pedi ?? null,
                 'cantidad_pendiente' => $cantidadPedida - $cantidadEntregada,
                 'dped_cod_bode' => $first->dped_cod_bode,
                 'es_auxiliar' => $this->isAuxiliarItem($first),
@@ -178,6 +190,7 @@ class EditOrdenCompra extends EditRecord
                     'es_auxiliar' => $detalle->es_auxiliar,
                     'es_servicio' => $detalle->es_servicio,
                     'detalle_pedido' => $detalle->detalle_pedido,
+                    'pedido_codigo' => $detalle->pedido_codigo,
                     'producto_auxiliar' => $auxiliarDescripcion,
                     'producto_servicio' => $servicioDescripcion,
                     'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
@@ -197,7 +210,7 @@ class EditOrdenCompra extends EditRecord
             $this->recalculateTotals();
         }
 
-        $this->applySolicitadoPor($connectionName, $this->parsePedidosImportados($this->data['pedidos_importados'] ?? ''));
+        $this->applySolicitadoPor($connectionName, OrdenCompraResource::normalizePedidosImportados($this->data['pedidos_importados'] ?? null));
 
         $this->dispatch('close-modal', id: 'importar_pedido');
     }
@@ -246,18 +259,43 @@ class EditOrdenCompra extends EditRecord
             || !empty($item->dped_desc_axiliar);
     }
 
-    private function parsePedidosImportados(?string $value): array
+    protected function beforeSave(): void
     {
-        if (!$value) {
-            return [];
+        $this->previousPedidoData = [
+            'id_empresa' => $this->record->id_empresa,
+            'amdg_id_empresa' => $this->record->amdg_id_empresa,
+            'amdg_id_sucursal' => $this->record->amdg_id_sucursal,
+            'pedidos_importados' => $this->record->pedidos_importados,
+        ];
+    }
+
+    protected function afterSave(): void
+    {
+        $anteriores = OrdenCompraResource::normalizePedidosImportados($this->previousPedidoData['pedidos_importados'] ?? null);
+        $nuevos = OrdenCompraResource::normalizePedidosImportados($this->record->pedidos_importados);
+
+        $removidos = array_values(array_diff($anteriores, $nuevos));
+        $agregados = array_values(array_diff($nuevos, $anteriores));
+
+        if (!empty($removidos)) {
+            OrdenCompraResource::updatePedidosEstado(
+                $this->previousPedidoData['id_empresa'] ?? null,
+                $this->previousPedidoData['amdg_id_empresa'] ?? null,
+                $this->previousPedidoData['amdg_id_sucursal'] ?? null,
+                $removidos,
+                'Pendiente'
+            );
         }
 
-        return collect(preg_split('/\\s*,\\s*/', trim($value)))
-            ->filter()
-            ->map(fn($pedido) => (int) ltrim((string) $pedido, '0'))
-            ->filter(fn($pedido) => $pedido > 0)
-            ->values()
-            ->all();
+        if (!empty($agregados)) {
+            OrdenCompraResource::updatePedidosEstado(
+                $this->record->id_empresa,
+                $this->record->amdg_id_empresa,
+                $this->record->amdg_id_sucursal,
+                $agregados,
+                'Atendido'
+            );
+        }
     }
 
     private function applySolicitadoPor(string $connectionName, array $pedidos): void
@@ -283,6 +321,7 @@ class EditOrdenCompra extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $data['pedidos_importados'] = OrdenCompraResource::formatPedidosImportados($data['pedidos_importados'] ?? null);
         $newDetalles = [];
         if (isset($data['detalles']) && is_array($data['detalles'])) {
             foreach ($data['detalles'] as $detalle) {
