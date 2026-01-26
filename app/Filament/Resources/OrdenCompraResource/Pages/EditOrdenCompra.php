@@ -15,12 +15,59 @@ class EditOrdenCompra extends EditRecord
 {
     protected static string $resource = OrdenCompraResource::class;
     protected array $pedidosOriginales = [];
+    protected const AUXILIAR_LABEL = 'Código: ';
+    protected const AUXILIAR_NOMBRE_LABEL = 'Nombre: ';
+    protected const SERVICIO_CODIGO_LABEL = 'Código servicio: ';
+    protected const SERVICIO_DESCRIPCION_LABEL = 'Descripción: ';
 
     protected function getListeners(): array
     {
         return [
             'pedidos_seleccionados' => 'onPedidosSeleccionados',
         ];
+    }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['info_proveedor'] = $data['id_proveedor'] ?? null;
+
+        if (isset($data['detalles']) && is_array($data['detalles'])) {
+            foreach ($data['detalles'] as $index => $detalle) {
+                $detalleData = $this->decodeDetalleData($detalle['detalle'] ?? null);
+                $codigoProducto = $detalle['codigo_producto'] ?? null;
+                $esServicio = $this->isServicioItem($codigoProducto);
+                $esAuxiliar = !empty($detalleData['codigo'])
+                    || !empty($detalleData['descripcion_auxiliar'])
+                    || !empty($detalleData['descripcion']);
+
+                $data['detalles'][$index]['es_auxiliar'] = $esAuxiliar;
+                $data['detalles'][$index]['es_servicio'] = $esServicio;
+
+                if ($esAuxiliar) {
+                    $auxiliarNombre = $detalleData['descripcion_auxiliar']
+                        ?? $detalleData['descripcion']
+                        ?? null;
+
+                    $data['detalles'][$index]['producto_auxiliar'] = trim(collect([
+                        $detalleData['codigo'] ? self::AUXILIAR_LABEL . $detalleData['codigo'] : null,
+                        $auxiliarNombre ? self::AUXILIAR_NOMBRE_LABEL . $auxiliarNombre : null,
+                    ])->filter()->implode(' | '));
+                }
+
+                if ($esServicio) {
+                    $servicioDescripcion = $detalleData['descripcion']
+                        ?? $detalle['producto']
+                        ?? null;
+
+                    $data['detalles'][$index]['producto_servicio'] = trim(collect([
+                        $codigoProducto ? self::SERVICIO_CODIGO_LABEL . $codigoProducto : null,
+                        $servicioDescripcion ? self::SERVICIO_DESCRIPCION_LABEL . $servicioDescripcion : null,
+                    ])->filter()->implode(' | '));
+                }
+            }
+        }
+
+        return $data;
     }
 
     protected function getHeaderActions(): array
@@ -260,6 +307,21 @@ class EditOrdenCompra extends EditRecord
     private function parsePedidosImportados(array|string|null $value): array
     {
         return OrdenCompraResource::normalizePedidosImportados($value);
+    }
+
+    private function decodeDetalleData(null|string|array $detalle): array
+    {
+        if (is_array($detalle)) {
+            return $detalle;
+        }
+
+        if (!$detalle) {
+            return [];
+        }
+
+        $decoded = json_decode($detalle, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function applySolicitadoPor(string $connectionName, array $pedidos): void
