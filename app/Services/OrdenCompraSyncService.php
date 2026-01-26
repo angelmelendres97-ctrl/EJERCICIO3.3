@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 
 class OrdenCompraSyncService
 {
+    private const ESTADO_PEDIDO_PROCESADO = 4;
     /**
      * Sincroniza los datos del producto con las tablas externas (saeprod, saeprbo)
      * en cada una de las bases de datos PostgreSQL seleccionadas.
@@ -405,7 +406,7 @@ class OrdenCompraSyncService
                 $amdg_id_empresa,
                 $amdg_id_sucursal,
                 self::normalizePedidosImportados($pedidos_importados),
-                'Atendido'
+                self::ESTADO_PEDIDO_PROCESADO
             );
 
             DB::connection($conexionPgsql)->commit();
@@ -420,7 +421,7 @@ class OrdenCompraSyncService
 
     }
 
-    public static function actualizarEstadoPedidos(Model $record, ?array $pedidoIds = null, string $estado = 'Pendiente'): void
+    public static function actualizarEstadoPedidos(Model $record, ?array $pedidoIds = null, string|int $estado = 'Pendiente'): void
     {
         $conexionPgsql = OrdenCompraResource::getExternalConnectionName($record->id_empresa);
         if (!$conexionPgsql) {
@@ -444,18 +445,38 @@ class OrdenCompraSyncService
         int $amdgIdEmpresa,
         int $amdgIdSucursal,
         array $pedidoIds,
-        string $estado
+        string|int $estado
     ): void {
         if (empty($pedidoIds)) {
             return;
         }
+
+        $estadoNormalizado = self::normalizeEstadoPedido($estado);
 
         DB::connection($conexionPgsql)
             ->table('saepedi')
             ->where('pedi_cod_empr', $amdgIdEmpresa)
             ->where('pedi_cod_sucu', $amdgIdSucursal)
             ->whereIn('pedi_cod_pedi', $pedidoIds)
-            ->update(['pedi_est_pedi' => $estado]);
+            ->update(['pedi_est_pedi' => $estadoNormalizado]);
+    }
+
+    private static function normalizeEstadoPedido(string|int $estado): string|int
+    {
+        if (is_int($estado)) {
+            return $estado;
+        }
+
+        if (is_numeric($estado)) {
+            return (int) $estado;
+        }
+
+        $estadoNormalizado = mb_strtolower(trim($estado));
+
+        return match ($estadoNormalizado) {
+            'atendido', 'procesado' => self::ESTADO_PEDIDO_PROCESADO,
+            default => $estado,
+        };
     }
 
     private static function normalizePedidosImportados(?string $value): array
