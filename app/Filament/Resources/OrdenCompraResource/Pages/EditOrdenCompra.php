@@ -197,6 +197,19 @@ class EditOrdenCompra extends EditRecord
 
         $this->data['detalles'] = $existingItems;
 
+        $pedidosConDetalle = collect($existingItems)
+            ->pluck('pedido_codigo')
+            ->filter()
+            ->map($normalizePedido)
+            ->unique()
+            ->values()
+            ->all();
+
+        $pedidosPorImportar = array_values(array_unique(array_merge(
+            $pedidosSeleccionadosNorm,
+            array_diff($pedidosUnicosNorm, $pedidosConDetalle)
+        )));
+
         // -----------------------------
         // 3) conexión externa
         // -----------------------------
@@ -209,15 +222,23 @@ class EditOrdenCompra extends EditRecord
             $this->data['uso_compra'] = $motivo;
         }
 
+        if (empty($pedidosPorImportar)) {
+            $this->recalculateTotals();
+            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
+            $this->form->fill($this->data);
+            $this->dispatch('close-modal', id: 'importar_pedido');
+            return;
+        }
+
         // -----------------------------
         // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
+        //    OJO: aquí usamos pedidosPorImportar (solo pedidos nuevos o sin detalles)
         // -----------------------------
         $schema = DB::connection($connectionName)->getSchemaBuilder();
 
         $query = DB::connection($connectionName)
             ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
+            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosPorImportar);
 
         if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
             $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
