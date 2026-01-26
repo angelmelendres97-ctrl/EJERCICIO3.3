@@ -154,94 +154,86 @@ class EditOrdenCompra extends EditRecord
             'motivo' => $motivo,
         ]);
 
-        if (empty($pedidos) || !$connectionId) {
+        if (!$connectionId) {
             return;
         }
 
-        // -----------------------------
-        // 1) Normalizar pedidos (sin ceros a la izquierda)
-        // -----------------------------
-        $pedidosImportadosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
         $pedidosSeleccionados = $this->parsePedidosImportados($pedidos);
+        $pedidosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
 
-        $normalizePedido = fn($p) => (ltrim((string) $p, '0') === '') ? '0' : ltrim((string) $p, '0');
+        $agregados = array_values(array_diff($pedidosSeleccionados, $pedidosActuales));
+        $eliminados = array_values(array_diff($pedidosActuales, $pedidosSeleccionados));
 
-        $pedidosSeleccionadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosSeleccionados)));
-        $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $pedidosSeleccionados)));
-        $pedidosUnicosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosUnicos)));
+        $this->data['pedidos_importados'] = $pedidosSeleccionados;
 
-        $this->data['pedidos_importados'] = $pedidosUnicos;
-
-        // -----------------------------
-        // 2) Si quitaron pedidos: limpiar repeater (dejar manuales + los pedidos aún presentes)
-        // -----------------------------
         $existingItems = $this->data['detalles'] ?? [];
-
-        $existingItems = array_values(array_filter($existingItems, function ($row) use ($pedidosUnicosNorm, $normalizePedido) {
+        $existingItems = array_values(array_filter($existingItems, function ($row) use ($pedidosSeleccionados) {
             $pedido = $row['pedido_codigo'] ?? null;
 
-            // manual (sin pedido)
             if (empty($pedido)) {
                 return true;
             }
 
-            $pedidoNorm = $normalizePedido($pedido);
-
-            return in_array($pedidoNorm, $pedidosUnicosNorm, true);
+            return in_array((int) $pedido, $pedidosSeleccionados, true);
         }));
-
-        // si no quedan pedidos, deja solo manuales
-        if (empty($pedidosUnicosNorm)) {
-            $existingItems = array_values(array_filter($existingItems, fn($r) => empty($r['pedido_codigo'] ?? null)));
-        }
 
         $this->data['detalles'] = $existingItems;
 
-        // -----------------------------
-        // 3) conexión externa
-        // -----------------------------
         $connectionName = OrdenCompraResource::getExternalConnectionName($connectionId);
         if (!$connectionName) {
             return;
         }
 
-        if (empty($this->data['uso_compra'])) {
-            $this->data['uso_compra'] = $motivo;
-        }
+        $this->data['uso_compra'] = $motivo;
 
-        // -----------------------------
-        // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
-        // -----------------------------
-        $schema = DB::connection($connectionName)->getSchemaBuilder();
-
-        $query = DB::connection($connectionName)
-            ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
-
-        if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
-            $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
-        }
-        if ($schema->hasColumn('saedped', 'dped_cod_sucu')) {
-            $query->where('d.dped_cod_sucu', $this->data['amdg_id_sucursal']);
-        }
-
-        // opcional: si quieres solo pendientes por ENTREGADO también, descomenta:
-        // $query->whereColumn('d.dped_can_ped', '>', 'd.dped_can_ent');
-
-        $detalles = $query->select('d.*')->get();
-
-        if ($detalles->isEmpty()) {
-            // igual actualiza solicitado_por y cierra modal
-            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
-            $this->form->fill($this->data);
+        if (empty($agregados) && !empty($eliminados)) {
+            $this->recalculateTotals();
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
 
-        // -----------------------------
-        // 5) Calcular "cuánto ya está importado" en otras OCs (excluyendo esta OC)
-        // -----------------------------
+        if (empty($agregados)) {
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
+            $this->dispatch('close-modal', id: 'importar_pedido');
+            return;
+        }
+
+        $unidades = DB::connection($connectionName)
+            ->table('saeunid')
+            ->select([
+                'unid_cod_unid',
+                DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+            ])
+            ->when(
+                DB::connection($connectionName)->getSchemaBuilder()->hasColumn('saeunid', 'unid_cod_empr'),
+                fn($q) => $q->where('unid_cod_empr', $this->data['amdg_id_empresa'])
+            )
+            ->groupBy('unid_cod_unid');
+
+        $detalles = DB::connection($connectionName)
+            ->table('saedped as d')
+            ->leftJoinSub($unidades, 'u', function ($join) {
+                $join->on('u.unid_cod_unid', '=', 'd.dped_cod_unid');
+            })
+            ->whereIn('d.dped_cod_pedi', $agregados)
+            ->where('d.dped_cod_empr', $this->data['amdg_id_empresa'])
+            ->where('d.dped_cod_sucu', $this->data['amdg_id_sucursal'])
+            ->select([
+                'd.*',
+                'u.unid_cod_unid',
+                'u.unid_nom_unid',
+                'u.unid_sigl_unid',
+            ])
+            ->get();
+
+        if ($detalles->isEmpty()) {
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
+            $this->dispatch('close-modal', id: 'importar_pedido');
+            return;
+        }
+
         $pairs = $detalles->map(fn($d) => [
             'pedido_codigo'     => (int) $d->dped_cod_pedi,
             'pedido_detalle_id' => (int) $d->dped_cod_dped,
@@ -249,30 +241,21 @@ class EditOrdenCompra extends EditRecord
 
         $importadoPorDetalle = $this->resolveImportadoPorDetalleEdit($pairs);
 
-        // -----------------------------
-        // 6) Pendiente = pedido - importadoEnOtrasOCs
-        // -----------------------------
         $detallesPendientes = $detalles->map(function ($detalle) use ($importadoPorDetalle) {
             $cantidadPedida = (float) ($detalle->dped_can_ped ?? 0);
-
             $key = ((int) $detalle->dped_cod_pedi) . ':' . ((int) $detalle->dped_cod_dped);
             $cantidadImportada = (float) ($importadoPorDetalle[$key] ?? 0);
-
             $detalle->cantidad_pendiente = $cantidadPedida - $cantidadImportada;
 
             return $detalle;
         })->filter(fn($d) => (float) $d->cantidad_pendiente > 0);
 
         if ($detallesPendientes->isEmpty()) {
-            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
-            $this->form->fill($this->data);
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
 
-        // -----------------------------
-        // 7) Construir items del repeater (SIN AGRUPAR)
-        // -----------------------------
         $repeaterItems = $detallesPendientes->map(function ($detalle) use ($connectionName) {
             $id_bodega_item = $detalle->dped_cod_bode ?? null;
 
@@ -281,7 +264,7 @@ class EditOrdenCompra extends EditRecord
             $productoNombre = 'Producto no encontrado';
             $codigoProducto = $detalle->dped_cod_prod ?? null;
 
-            if (!empty($codigoProducto) && !empty($id_bodega_item)) {
+            if (!empty($codigoProducto)) {
                 $productData = DB::connection($connectionName)
                     ->table('saeprod')
                     ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
@@ -301,62 +284,61 @@ class EditOrdenCompra extends EditRecord
                 }
             }
 
-            $esAuxiliar = $this->isAuxiliarItem($detalle);
-            $esServicio = $this->isServicioItem($codigoProducto);
-
-            $valor_impuesto = ((float) $detalle->cantidad_pendiente * (float) $costo) * ((float) $impuesto / 100);
-
+            $valor_impuesto = (floatval($detalle->cantidad_pendiente) * floatval($costo)) * (floatval($impuesto) / 100);
             $auxiliarDescripcion = null;
             $auxiliarData = null;
 
+            $esAuxiliar = $this->isAuxiliarItem($detalle);
             if ($esAuxiliar) {
-                $descripcionAuxiliar = $detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar ?? null;
-
+                $descripcionAuxiliar = $detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar;
                 $auxiliarDescripcion = trim(collect([
-                    $detalle->dped_cod_auxiliar ? 'Código auxiliar: ' . $detalle->dped_cod_auxiliar : null,
-                    $detalle->dped_det_dped ? 'Descripción: ' . $detalle->dped_det_dped : null,
-                    $descripcionAuxiliar ? 'Descripción auxiliar: ' . $descripcionAuxiliar : null,
+                    $detalle->dped_cod_auxiliar ? 'Código: ' . $detalle->dped_cod_auxiliar : null,
+                    $descripcionAuxiliar ? 'Nombre: ' . $descripcionAuxiliar : null,
                 ])->filter()->implode(' | '));
 
                 $auxiliarData = [
-                    'codigo' => $detalle->dped_cod_auxiliar ?? null,
-                    'descripcion' => $detalle->dped_det_dped ?? null,
+                    'codigo' => $detalle->dped_cod_auxiliar,
+                    'descripcion' => $detalle->dped_det_dped,
                     'descripcion_auxiliar' => $descripcionAuxiliar,
                 ];
             }
 
             $servicioDescripcion = null;
+
+            $esServicio = $this->isServicioItem($codigoProducto);
             if ($esServicio) {
                 $servicioDescripcion = trim(collect([
-                    $codigoProducto ? 'Código servicio: ' . $codigoProducto : null,
-                    $detalle->dped_det_dped ? 'Descripción: ' . $detalle->dped_det_dped : null,
+                    $detalle->dped_cod_prod ? 'Código servicio: ' . $detalle->dped_cod_prod : null,
+                    $detalle->dped_det_dped
+                        ? 'Descripción: ' . $detalle->dped_det_dped
+                        : null,
                 ])->filter()->implode(' | '));
             }
+
+            $detallePedido = trim((string) ($detalle->dped_det_dped ?? ''));
+            $detallePedido = $detallePedido !== '' ? $detallePedido : null;
 
             $productoLinea = $esServicio
                 ? ($detalle->dped_det_dped ?? $productoNombre)
                 : $productoNombre;
+            $unidadItem = $detalle->unid_abr_unid
+                ?? $detalle->unid_nom_unid
+                ?? 'UN';
 
             return [
                 'id_bodega' => $id_bodega_item,
                 'codigo_producto' => $codigoProducto,
                 'producto' => $productoLinea,
-
+                'unidad' => $unidadItem,
                 'es_auxiliar' => $esAuxiliar,
                 'es_servicio' => $esServicio,
-                'detalle_pedido' => $detalle->dped_det_dped ?? null,
-
+                'detalle_pedido' => $detallePedido,
                 'producto_auxiliar' => $auxiliarDescripcion,
                 'producto_servicio' => $servicioDescripcion,
                 'detalle' => $auxiliarData ? json_encode($auxiliarData, JSON_UNESCAPED_UNICODE) : null,
-
-                // ✅ CLAVE ÚNICA por línea
-                'pedido_codigo' => (int) $detalle->dped_cod_pedi,
-                'pedido_detalle_id' => (int) $detalle->dped_cod_dped,
-
-                // ✅ pendiente calculado
-                'cantidad' => (float) $detalle->cantidad_pendiente,
-
+                'pedido_codigo' => $detalle->dped_cod_pedi,
+                'pedido_detalle_id' => $detalle->dped_cod_dped,
+                'cantidad' => $detalle->cantidad_pendiente,
                 'costo' => $costo,
                 'descuento' => 0,
                 'impuesto' => $impuesto,
@@ -364,16 +346,12 @@ class EditOrdenCompra extends EditRecord
             ];
         })->values()->toArray();
 
-        // -----------------------------
-        // 8) Merge + recalcular + fill
-        // -----------------------------
         $existingItems = $this->data['detalles'] ?? [];
         $this->data['detalles'] = $this->mergeDetalleItems($existingItems, $repeaterItems);
 
         $this->recalculateTotals();
 
-        $this->applySolicitadoPor($connectionName, $pedidosUnicos);
-        $this->form->fill($this->data);
+        $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
 
         $this->dispatch('close-modal', id: 'importar_pedido');
     }
