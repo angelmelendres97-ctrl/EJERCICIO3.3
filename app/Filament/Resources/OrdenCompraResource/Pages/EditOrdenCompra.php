@@ -159,25 +159,26 @@ class EditOrdenCompra extends EditRecord
         }
 
         // -----------------------------
-        // 1) Normalizar pedidos (sin ceros a la izquierda)
+        // 1) Normalizar pedidos y detectar cambios
         // -----------------------------
         $pedidosImportadosActuales = $this->parsePedidosImportados($this->data['pedidos_importados'] ?? null);
         $pedidosSeleccionados = $this->parsePedidosImportados($pedidos);
 
         $normalizePedido = fn($p) => (ltrim((string) $p, '0') === '') ? '0' : ltrim((string) $p, '0');
 
+        $pedidosImportadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosImportadosActuales)));
         $pedidosSeleccionadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosSeleccionados)));
-        $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $pedidosSeleccionados)));
-        $pedidosUnicosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosUnicos)));
 
-        $this->data['pedidos_importados'] = $pedidosUnicos;
+        $agregados = array_values(array_diff($pedidosSeleccionadosNorm, $pedidosImportadosNorm));
+
+        $this->data['pedidos_importados'] = $pedidosSeleccionados;
 
         // -----------------------------
         // 2) Si quitaron pedidos: limpiar repeater (dejar manuales + los pedidos aún presentes)
         // -----------------------------
         $existingItems = $this->data['detalles'] ?? [];
 
-        $existingItems = array_values(array_filter($existingItems, function ($row) use ($pedidosUnicosNorm, $normalizePedido) {
+        $existingItems = array_values(array_filter($existingItems, function ($row) use ($pedidosSeleccionadosNorm, $normalizePedido) {
             $pedido = $row['pedido_codigo'] ?? null;
 
             // manual (sin pedido)
@@ -187,11 +188,11 @@ class EditOrdenCompra extends EditRecord
 
             $pedidoNorm = $normalizePedido($pedido);
 
-            return in_array($pedidoNorm, $pedidosUnicosNorm, true);
+            return in_array($pedidoNorm, $pedidosSeleccionadosNorm, true);
         }));
 
         // si no quedan pedidos, deja solo manuales
-        if (empty($pedidosUnicosNorm)) {
+        if (empty($pedidosSeleccionadosNorm)) {
             $existingItems = array_values(array_filter($existingItems, fn($r) => empty($r['pedido_codigo'] ?? null)));
         }
 
@@ -211,13 +212,13 @@ class EditOrdenCompra extends EditRecord
 
         // -----------------------------
         // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
+        //    OJO: aquí usamos solo los agregados para no recargar los originales
         // -----------------------------
         $schema = DB::connection($connectionName)->getSchemaBuilder();
 
         $query = DB::connection($connectionName)
             ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
+            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $agregados);
 
         if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
             $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
@@ -233,8 +234,8 @@ class EditOrdenCompra extends EditRecord
 
         if ($detalles->isEmpty()) {
             // igual actualiza solicitado_por y cierra modal
-            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
-            $this->form->fill($this->data);
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
+            $this->recalculateTotals();
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -264,8 +265,8 @@ class EditOrdenCompra extends EditRecord
         })->filter(fn($d) => (float) $d->cantidad_pendiente > 0);
 
         if ($detallesPendientes->isEmpty()) {
-            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
-            $this->form->fill($this->data);
+            $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
+            $this->recalculateTotals();
             $this->dispatch('close-modal', id: 'importar_pedido');
             return;
         }
@@ -372,7 +373,7 @@ class EditOrdenCompra extends EditRecord
 
         $this->recalculateTotals();
 
-        $this->applySolicitadoPor($connectionName, $pedidosUnicos);
+        $this->applySolicitadoPor($connectionName, $pedidosSeleccionados);
         $this->form->fill($this->data);
 
         $this->dispatch('close-modal', id: 'importar_pedido');
