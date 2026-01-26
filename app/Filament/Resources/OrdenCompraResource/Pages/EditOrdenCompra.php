@@ -16,6 +16,14 @@ class EditOrdenCompra extends EditRecord
     protected static string $resource = OrdenCompraResource::class;
     protected array $pedidosOriginales = [];
 
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['info_proveedor'] = $data['id_proveedor'] ?? null;
+        $data['detalles'] = $this->hydrateDetallesForEdit($data);
+
+        return $data;
+    }
+
     protected function getListeners(): array
     {
         return [
@@ -156,9 +164,8 @@ class EditOrdenCompra extends EditRecord
                 $auxiliarData = null;
                 if ($detalle->es_auxiliar) {
                     $auxiliarDescripcion = trim(collect([
-                        $detalle->auxiliar_codigo ? 'Código auxiliar: ' . $detalle->auxiliar_codigo : null,
-                        $detalle->auxiliar_nombre ? 'Descripción: ' . $detalle->auxiliar_nombre : null,
-                        $detalle->auxiliar_descripcion ? 'Descripción auxiliar: ' . $detalle->auxiliar_descripcion : null,
+                        $detalle->auxiliar_codigo ? 'Código: ' . $detalle->auxiliar_codigo : null,
+                        $detalle->auxiliar_descripcion ? 'Nombre: ' . $detalle->auxiliar_descripcion : null,
                     ])->filter()->implode(' | '));
 
                     $auxiliarData = [
@@ -255,6 +262,102 @@ class EditOrdenCompra extends EditRecord
         return !empty($item->dped_cod_auxiliar)
             || !empty($item->dped_desc_auxiliar)
             || !empty($item->dped_desc_axiliar);
+    }
+
+    private function hydrateDetallesForEdit(array $data): array
+    {
+        $detalles = $data['detalles'] ?? [];
+        if (!is_array($detalles) || $detalles === []) {
+            return $detalles;
+        }
+
+        $empresaId = $data['id_empresa'] ?? null;
+        $amdgEmpresa = $data['amdg_id_empresa'] ?? null;
+        $amdgSucursal = $data['amdg_id_sucursal'] ?? null;
+        $connectionName = $empresaId ? OrdenCompraResource::getExternalConnectionName($empresaId) : null;
+
+        $pedidoDetalleMap = [];
+        if ($connectionName && $amdgEmpresa && $amdgSucursal) {
+            $detalleIds = collect($detalles)
+                ->pluck('pedido_detalle_id')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($detalleIds)) {
+                $pedidoDetalleMap = DB::connection($connectionName)
+                    ->table('saedped')
+                    ->where('dped_cod_empr', $amdgEmpresa)
+                    ->where('dped_cod_sucu', $amdgSucursal)
+                    ->whereIn('dped_cod_dped', $detalleIds)
+                    ->select([
+                        'dped_cod_dped',
+                        'dped_cod_pedi',
+                        'dped_det_dped',
+                        'dped_cod_auxiliar',
+                        'dped_desc_auxiliar',
+                        'dped_desc_axiliar',
+                    ])
+                    ->get()
+                    ->mapWithKeys(function ($row) {
+                        $key = ((int) ($row->dped_cod_pedi ?? 0)) . ':' . ((int) ($row->dped_cod_dped ?? 0));
+                        return [$key => $row];
+                    })
+                    ->all();
+            }
+        }
+
+        return collect($detalles)->map(function (array $detalle) use ($pedidoDetalleMap) {
+            $pedidoCodigo = $detalle['pedido_codigo'] ?? 0;
+            $pedidoDetalleId = $detalle['pedido_detalle_id'] ?? 0;
+            $lookupKey = ((int) $pedidoCodigo) . ':' . ((int) $pedidoDetalleId);
+            $pedidoRow = $pedidoDetalleMap[$lookupKey] ?? null;
+
+            $detalleJson = null;
+            if (!empty($detalle['detalle']) && is_string($detalle['detalle'])) {
+                $detalleJson = json_decode($detalle['detalle'], true);
+            }
+
+            $detallePedido = $detalle['detalle_pedido'] ?? null;
+            if (!$detallePedido && $pedidoRow?->dped_det_dped) {
+                $detallePedido = $pedidoRow->dped_det_dped;
+            }
+
+            $auxCodigo = $pedidoRow?->dped_cod_auxiliar
+                ?? ($detalleJson['codigo'] ?? null);
+            $auxNombre = $pedidoRow?->dped_desc_auxiliar
+                ?? $pedidoRow?->dped_desc_axiliar
+                ?? ($detalleJson['descripcion_auxiliar'] ?? null);
+
+            $esAuxiliar = !empty($auxCodigo) || !empty($auxNombre);
+            $auxiliarDescripcion = null;
+            if ($esAuxiliar) {
+                $auxiliarDescripcion = trim(collect([
+                    $auxCodigo ? 'Código: ' . $auxCodigo : null,
+                    $auxNombre ? 'Nombre: ' . $auxNombre : null,
+                ])->filter()->implode(' | '));
+            }
+
+            $codigoProducto = $detalle['codigo_producto'] ?? null;
+            $esServicio = $this->isServicioItem($codigoProducto);
+            $servicioDescripcion = null;
+            if ($esServicio) {
+                $servicioNombre = $detallePedido ?: ($detalle['producto'] ?? null);
+                $servicioDescripcion = trim(collect([
+                    $codigoProducto ? 'Código servicio: ' . $codigoProducto : null,
+                    $servicioNombre ? 'Descripción: ' . $servicioNombre : null,
+                ])->filter()->implode(' | '));
+            }
+
+            $detalle['detalle_pedido'] = $detallePedido;
+            $detalle['es_auxiliar'] = $esAuxiliar;
+            $detalle['es_servicio'] = $esServicio;
+            $detalle['producto_auxiliar'] = $auxiliarDescripcion;
+            $detalle['producto_servicio'] = $servicioDescripcion;
+
+            return $detalle;
+        })->values()->all();
     }
 
     private function parsePedidosImportados(array|string|null $value): array
