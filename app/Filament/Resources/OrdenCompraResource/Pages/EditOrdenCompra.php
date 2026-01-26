@@ -166,7 +166,6 @@ class EditOrdenCompra extends EditRecord
 
         $normalizePedido = fn($p) => (ltrim((string) $p, '0') === '') ? '0' : ltrim((string) $p, '0');
 
-        $pedidosSeleccionadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosSeleccionados)));
         $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $pedidosSeleccionados)));
         $pedidosUnicosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosUnicos)));
 
@@ -211,13 +210,29 @@ class EditOrdenCompra extends EditRecord
 
         // -----------------------------
         // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
+        //    OJO: aquí usamos pedidosSeleccionados (solo los recién elegidos)
         // -----------------------------
         $schema = DB::connection($connectionName)->getSchemaBuilder();
 
+        $unidades = DB::connection($connectionName)
+            ->table('saeunid')
+            ->select([
+                'unid_cod_unid',
+                DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+            ])
+            ->when(
+                $schema->hasColumn('saeunid', 'unid_cod_empr'),
+                fn($q) => $q->where('unid_cod_empr', $this->data['amdg_id_empresa'])
+            )
+            ->groupBy('unid_cod_unid');
+
         $query = DB::connection($connectionName)
             ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
+            ->leftJoinSub($unidades, 'u', function ($join) {
+                $join->on('u.unid_cod_unid', '=', 'd.dped_cod_unid');
+            })
+            ->whereIn('d.dped_cod_pedi', $pedidosSeleccionados);
 
         if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
             $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
@@ -229,10 +244,16 @@ class EditOrdenCompra extends EditRecord
         // opcional: si quieres solo pendientes por ENTREGADO también, descomenta:
         // $query->whereColumn('d.dped_can_ped', '>', 'd.dped_can_ent');
 
-        $detalles = $query->select('d.*')->get();
+        $detalles = $query->select([
+            'd.*',
+            'u.unid_cod_unid',
+            'u.unid_nom_unid',
+            'u.unid_sigl_unid',
+        ])->get();
 
         if ($detalles->isEmpty()) {
             // igual actualiza solicitado_por y cierra modal
+            $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
             $this->dispatch('close-modal', id: 'importar_pedido');
@@ -264,6 +285,7 @@ class EditOrdenCompra extends EditRecord
         })->filter(fn($d) => (float) $d->cantidad_pendiente > 0);
 
         if ($detallesPendientes->isEmpty()) {
+            $this->recalculateTotals();
             $this->applySolicitadoPor($connectionName, $pedidosUnicos);
             $this->form->fill($this->data);
             $this->dispatch('close-modal', id: 'importar_pedido');
@@ -281,7 +303,7 @@ class EditOrdenCompra extends EditRecord
             $productoNombre = 'Producto no encontrado';
             $codigoProducto = $detalle->dped_cod_prod ?? null;
 
-            if (!empty($codigoProducto) && !empty($id_bodega_item)) {
+            if (!empty($codigoProducto)) {
                 $productData = DB::connection($connectionName)
                     ->table('saeprod')
                     ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
@@ -313,9 +335,8 @@ class EditOrdenCompra extends EditRecord
                 $descripcionAuxiliar = $detalle->dped_desc_auxiliar ?? $detalle->dped_desc_axiliar ?? null;
 
                 $auxiliarDescripcion = trim(collect([
-                    $detalle->dped_cod_auxiliar ? 'Código auxiliar: ' . $detalle->dped_cod_auxiliar : null,
-                    $detalle->dped_det_dped ? 'Descripción: ' . $detalle->dped_det_dped : null,
-                    $descripcionAuxiliar ? 'Descripción auxiliar: ' . $descripcionAuxiliar : null,
+                    $detalle->dped_cod_auxiliar ? 'Código: ' . $detalle->dped_cod_auxiliar : null,
+                    $descripcionAuxiliar ? 'Nombre: ' . $descripcionAuxiliar : null,
                 ])->filter()->implode(' | '));
 
                 $auxiliarData = [
@@ -329,22 +350,32 @@ class EditOrdenCompra extends EditRecord
             if ($esServicio) {
                 $servicioDescripcion = trim(collect([
                     $codigoProducto ? 'Código servicio: ' . $codigoProducto : null,
-                    $detalle->dped_det_dped ? 'Descripción: ' . $detalle->dped_det_dped : null,
+                    $detalle->dped_det_dped
+                        ? 'Descripción: ' . $detalle->dped_det_dped
+                        : null,
                 ])->filter()->implode(' | '));
             }
+
+            $detallePedido = trim((string) ($detalle->dped_det_dped ?? ''));
+            $detallePedido = $detallePedido !== '' ? $detallePedido : null;
 
             $productoLinea = $esServicio
                 ? ($detalle->dped_det_dped ?? $productoNombre)
                 : $productoNombre;
 
+            $unidadItem = $detalle->unid_sigl_unid
+                ?? $detalle->unid_nom_unid
+                ?? 'UN';
+
             return [
                 'id_bodega' => $id_bodega_item,
                 'codigo_producto' => $codigoProducto,
                 'producto' => $productoLinea,
+                'unidad' => $unidadItem,
 
                 'es_auxiliar' => $esAuxiliar,
                 'es_servicio' => $esServicio,
-                'detalle_pedido' => $detalle->dped_det_dped ?? null,
+                'detalle_pedido' => $detallePedido,
 
                 'producto_auxiliar' => $auxiliarDescripcion,
                 'producto_servicio' => $servicioDescripcion,
@@ -625,7 +656,11 @@ class EditOrdenCompra extends EditRecord
         $eliminados = array_values(array_diff($this->pedidosOriginales, $pedidosActuales));
 
         if (!empty($agregados)) {
-            OrdenCompraSyncService::actualizarEstadoPedidos($this->record, $agregados, 'Atendido');
+            OrdenCompraSyncService::actualizarEstadoPedidos(
+                $this->record,
+                $agregados,
+                OrdenCompraSyncService::ESTADO_PROCESADO
+            );
         }
 
         if (!empty($eliminados)) {
