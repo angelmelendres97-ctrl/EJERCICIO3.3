@@ -158,6 +158,11 @@ class EditOrdenCompra extends EditRecord
             return;
         }
 
+        $currentState = $this->form->getState();
+        if (is_array($currentState)) {
+            $this->data = array_merge($this->data, $currentState);
+        }
+
         // -----------------------------
         // 1) Normalizar pedidos (sin ceros a la izquierda)
         // -----------------------------
@@ -167,6 +172,8 @@ class EditOrdenCompra extends EditRecord
         $normalizePedido = fn($p) => (ltrim((string) $p, '0') === '') ? '0' : ltrim((string) $p, '0');
 
         $pedidosSeleccionadosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosSeleccionados)));
+        $pedidosImportadosActualesNorm = array_values(array_unique(array_map($normalizePedido, $pedidosImportadosActuales)));
+        $pedidosNuevosNorm = array_values(array_diff($pedidosSeleccionadosNorm, $pedidosImportadosActualesNorm));
         $pedidosUnicos = array_values(array_unique(array_merge($pedidosImportadosActuales, $pedidosSeleccionados)));
         $pedidosUnicosNorm = array_values(array_unique(array_map($normalizePedido, $pedidosUnicos)));
 
@@ -209,15 +216,22 @@ class EditOrdenCompra extends EditRecord
             $this->data['uso_compra'] = $motivo;
         }
 
+        if (empty($pedidosNuevosNorm)) {
+            $this->applySolicitadoPor($connectionName, $pedidosUnicos);
+            $this->form->fill($this->data);
+            $this->dispatch('close-modal', id: 'importar_pedido');
+            return;
+        }
+
         // -----------------------------
         // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
+        //    OJO: aquí usamos pedidosNuevosNorm (solo los recién elegidos)
         // -----------------------------
         $schema = DB::connection($connectionName)->getSchemaBuilder();
 
         $query = DB::connection($connectionName)
             ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
+            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosNuevosNorm);
 
         if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
             $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
