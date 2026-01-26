@@ -210,14 +210,29 @@ class EditOrdenCompra extends EditRecord
         }
 
         // -----------------------------
-        // 4) Traer detalles de SAE (línea por línea)
-        //    OJO: aquí usamos pedidosSeleccionadosNorm (solo los recién elegidos)
+        // 4) Traer detalles de SAE (línea por línea) para los pedidos recién elegidos
         // -----------------------------
         $schema = DB::connection($connectionName)->getSchemaBuilder();
 
+        $unidades = DB::connection($connectionName)
+            ->table('saeunid')
+            ->select([
+                'unid_cod_unid',
+                DB::raw('MAX(unid_nom_unid) as unid_nom_unid'),
+                DB::raw('MAX(unid_sigl_unid) as unid_sigl_unid'),
+            ])
+            ->when(
+                DB::connection($connectionName)->getSchemaBuilder()->hasColumn('saeunid', 'unid_cod_empr'),
+                fn($q) => $q->where('unid_cod_empr', $this->data['amdg_id_empresa'])
+            )
+            ->groupBy('unid_cod_unid');
+
         $query = DB::connection($connectionName)
             ->table('saedped as d')
-            ->whereIn(DB::raw("ltrim(d.dped_cod_pedi::text, '0')"), $pedidosSeleccionadosNorm);
+            ->leftJoinSub($unidades, 'u', function ($join) {
+                $join->on('u.unid_cod_unid', '=', 'd.dped_cod_unid');
+            })
+            ->whereIn('d.dped_cod_pedi', $pedidosSeleccionados);
 
         if ($schema->hasColumn('saedped', 'dped_cod_empr')) {
             $query->where('d.dped_cod_empr', $this->data['amdg_id_empresa']);
@@ -226,10 +241,12 @@ class EditOrdenCompra extends EditRecord
             $query->where('d.dped_cod_sucu', $this->data['amdg_id_sucursal']);
         }
 
-        // opcional: si quieres solo pendientes por ENTREGADO también, descomenta:
-        // $query->whereColumn('d.dped_can_ped', '>', 'd.dped_can_ent');
-
-        $detalles = $query->select('d.*')->get();
+        $detalles = $query->select([
+            'd.*',
+            'u.unid_cod_unid',
+            'u.unid_nom_unid',
+            'u.unid_sigl_unid',
+        ])->get();
 
         if ($detalles->isEmpty()) {
             // igual actualiza solicitado_por y cierra modal
@@ -337,10 +354,15 @@ class EditOrdenCompra extends EditRecord
                 ? ($detalle->dped_det_dped ?? $productoNombre)
                 : $productoNombre;
 
+            $unidadItem = $detalle->unid_sigl_unid
+                ?? $detalle->unid_nom_unid
+                ?? 'UN';
+
             return [
                 'id_bodega' => $id_bodega_item,
                 'codigo_producto' => $codigoProducto,
                 'producto' => $productoLinea,
+                'unidad' => $unidadItem,
 
                 'es_auxiliar' => $esAuxiliar,
                 'es_servicio' => $esServicio,
