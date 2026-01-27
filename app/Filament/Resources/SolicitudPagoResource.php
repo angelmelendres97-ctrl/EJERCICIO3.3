@@ -1040,7 +1040,7 @@ class SolicitudPagoResource extends Resource
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
             ->whereHas('solicitudPago', function ($q) {
-                $q->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
+                $q->where('estado', 'APROBADA');
             })
             ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado'])
             ->groupBy(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)

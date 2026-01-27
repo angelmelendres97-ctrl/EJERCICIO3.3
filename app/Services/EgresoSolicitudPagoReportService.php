@@ -13,7 +13,10 @@ class EgresoSolicitudPagoReportService
         $solicitud->loadMissing('detalles');
 
         $reportes = [];
-        $grupos = $solicitud->detalles->groupBy(function ($detalle) use ($solicitud) {
+        $detalles = $solicitud->detalles
+            ->reject(fn($detalle) => method_exists($detalle, 'isCompra') && $detalle->isCompra());
+
+        $grupos = $detalles->groupBy(function ($detalle) use ($solicitud) {
             $conexion = (int) ($detalle->erp_conexion ?? $solicitud->id_empresa ?? 0);
             $empresa = (string) ($detalle->erp_empresa_id ?? '');
             $sucursal = (string) ($detalle->erp_sucursal ?? '');
