@@ -15,6 +15,23 @@
             ->implode(', ');
     @endphp
 
+    @php
+        $resumenGeneral = [
+            'debito' => 0.0,
+            'credito' => 0.0,
+        ];
+
+        foreach ($reportes as $reporte) {
+            $debito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_dml_dasi ?? 0));
+            $credito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_cml_dasi ?? 0));
+            $resumenGeneral['debito'] += $debito;
+            $resumenGeneral['credito'] += $credito;
+        }
+
+        $resumenGeneral['saldo'] = $resumenGeneral['debito'] - $resumenGeneral['credito'];
+        $resumenGeneral['saldo_pendiente'] = abs($resumenGeneral['saldo']);
+    @endphp
+
     <div
         class="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:grid-cols-3">
         <div><span class="font-semibold">Solicitud:</span> #{{ $solicitud->id }}</div>
@@ -24,6 +41,13 @@
     </div>
 
     @forelse ($reportes as $reporte)
+        @php
+            $totalDebito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_dml_dasi ?? 0));
+            $totalCredito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_cml_dasi ?? 0));
+            $saldoFinal = $totalDebito - $totalCredito;
+            $saldoPendiente = abs($saldoFinal);
+        @endphp
+
         <div class="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Asiento contable generado</h4>
@@ -33,6 +57,25 @@
                         · Sucursal {{ $reporte['context']['sucursal'] }}
                     @endif
                 </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-200 sm:grid-cols-4">
+                <div>
+                    <div class="text-[11px] uppercase text-slate-500">Total débito</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format($totalDebito, 2) }}</div>
+                </div>
+                <div>
+                    <div class="text-[11px] uppercase text-slate-500">Total crédito</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format($totalCredito, 2) }}</div>
+                </div>
+                <div>
+                    <div class="text-[11px] uppercase text-slate-500">Saldo pendiente</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format($saldoPendiente, 2) }}</div>
+                </div>
+                <div>
+                    <div class="text-[11px] uppercase text-slate-500">Saldo final</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format($saldoFinal, 2) }}</div>
+                </div>
             </div>
 
             @if ($reporte['asiento'])
@@ -123,4 +166,28 @@
             No se encontraron asientos contables relacionados con esta solicitud.
         </div>
     @endforelse
+
+    @if (! empty($reportes))
+        <div class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Resumen general</h4>
+            <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                    <div class="text-[11px] uppercase text-slate-500">Total débito</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format((float) ($resumenGeneral['debito'] ?? 0), 2) }}</div>
+                </div>
+                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                    <div class="text-[11px] uppercase text-slate-500">Total crédito</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format((float) ($resumenGeneral['credito'] ?? 0), 2) }}</div>
+                </div>
+                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                    <div class="text-[11px] uppercase text-slate-500">Saldo pendiente</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format((float) ($resumenGeneral['saldo_pendiente'] ?? 0), 2) }}</div>
+                </div>
+                <div class="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                    <div class="text-[11px] uppercase text-slate-500">Saldo final</div>
+                    <div class="text-sm font-semibold text-slate-900 dark:text-white">{{ number_format((float) ($resumenGeneral['saldo'] ?? 0), 2) }}</div>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

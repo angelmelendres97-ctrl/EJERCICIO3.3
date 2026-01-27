@@ -1052,7 +1052,7 @@ class SolicitudPagoResource extends Resource
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
             ->whereHas('solicitudPago', function ($q) {
-                $q->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
+                $q->whereIn('estado', ['BORRADOR', 'APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
             })
             ->with('solicitudPago')
             ->get([
@@ -1070,7 +1070,7 @@ class SolicitudPagoResource extends Resource
         $saldos = [];
 
         $detalles
-            ->filter(fn(SolicitudPagoDetalle $detalle) => strtoupper((string) $detalle->solicitudPago?->estado) === 'APROBADA')
+            ->filter(fn(SolicitudPagoDetalle $detalle) => in_array(strtoupper((string) $detalle->solicitudPago?->estado), ['BORRADOR', 'APROBADA'], true))
             ->groupBy(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
             ->each(function ($items, string $key) use (&$saldos): void {
                 $saldoBase = (float) $items->max(fn($detalle) => (float) ($detalle->saldo_al_crear ?? 0));
