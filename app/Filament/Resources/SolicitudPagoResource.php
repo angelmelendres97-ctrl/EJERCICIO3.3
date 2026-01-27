@@ -748,26 +748,7 @@ class SolicitudPagoResource extends Resource
             return [];
         }
 
-        // 1) Facturas ya registradas (de solicitudes NO anuladas/rechazadas)
-        $registradas = SolicitudPagoDetalle::query()
-            ->where('erp_conexion', (string) $empresaId)
-            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
-            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
-            ->with('solicitudPago')
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id', 'erp_tabla'])
-            ->filter(function (SolicitudPagoDetalle $detalle): bool {
-                if ($detalle->isCompra()) {
-                    return false;
-                }
-
-                return self::shouldBlockFactura(
-                    $detalle->solicitudPago?->estado,
-                    $detalle->saldo_al_crear,
-                    $detalle->abono_aplicado
-                );
-            })
-            ->map(fn($d) => ($d->erp_empresa_id ?? '') . '|' . ($d->erp_sucursal ?? '') . '|' . ($d->proveedor_codigo ?? '') . '|' . ($d->numero_factura ?? ''))
-            ->flip(); // set
+        $abonosPendientes = self::getAbonosPendientesSolicitudes($empresaId, $empresas, $sucursales);
 
         $empresaOptions  = self::getEmpresasOptions($empresaId);
         $sucursalOptions = self::getSucursalesOptions($empresaId, $empresas);
@@ -797,11 +778,14 @@ class SolicitudPagoResource extends Resource
 
         $rows = $q->get();
 
-        // 3) Dejar solo facturas NO registradas, y de ahí sacar proveedores únicos
+        // 3) Dejar solo facturas con saldo pendiente real, y de ahí sacar proveedores únicos
         $proveedores = collect($rows)
-            ->reject(function ($r) use ($registradas) {
+            ->reject(function ($r) use ($abonosPendientes) {
                 $k = $r->empr . '|' . $r->sucu . '|' . $r->provcod . '|' . $r->numfac;
-                return $registradas->has($k);
+                $saldo = (float) ($r->saldo ?? 0);
+                $pendiente = (float) ($abonosPendientes[$k] ?? 0);
+
+                return ($saldo - $pendiente) <= 0;
             })
             ->groupBy(fn($r) => $r->empr . '|' . $r->sucu . '|' . $r->provcod)
             ->map(function ($items, $key) use ($empresaOptions, $sucursalOptions) {
@@ -832,30 +816,7 @@ class SolicitudPagoResource extends Resource
         $proveedorOptions = self::getProveedoresOptions($empresaId, $empresas, $sucursales);
         $proveedoresBase  = self::getProveedoresBase($empresaId, $empresas, $sucursales);
 
-        $saldosPendientes = self::getSaldosPendientesAprobados($empresaId, $empresas, $sucursales);
-
-        $detallesRegistrados = \App\Models\SolicitudPagoDetalle::query()
-            ->where('erp_conexion', (string) $empresaId)
-            ->when(
-                fn($query) => $query->getModel()->relationLoaded('solicitudPago') === false,
-                fn($query) => $query->with('solicitudPago'),
-            )
-            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
-            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id', 'erp_tabla'])
-            ->filter(function (SolicitudPagoDetalle $detalle): bool {
-                if ($detalle->isCompra()) {
-                    return false;
-                }
-
-                return self::shouldBlockFactura(
-                    $detalle->solicitudPago?->estado,
-                    $detalle->saldo_al_crear,
-                    $detalle->abono_aplicado
-                );
-            })
-            ->map(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
-            ->all();
+        $abonosPendientes = self::getAbonosPendientesSolicitudes($empresaId, $empresas, $sucursales);
 
         $agrupado = [];
 
@@ -915,16 +876,9 @@ class SolicitudPagoResource extends Resource
                         $keyDetalle = $empresaCodigo . '|' . $sucursalCodigo . '|' . $provCodigo . '|' . $numeroFactura;
                         $seleccionada = in_array($keyDetalle, $selectedKeys, true);
 
-                        if (in_array($keyDetalle, $detallesRegistrados, true) && ! $seleccionada) {
-                            continue;
-                        }
-
                         $saldoFactura = (float) ($factura->saldo ?? 0);
-                        $saldoPendiente = $saldosPendientes[$keyDetalle] ?? $saldoFactura;
-
-                        if (array_key_exists($keyDetalle, $saldosPendientes)) {
-                            $saldoPendiente = min($saldoFactura, $saldoPendiente);
-                        }
+                        $abonoPendiente = (float) ($abonosPendientes[$keyDetalle] ?? 0);
+                        $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
 
                         if ($saldoPendiente <= 0 && ! $seleccionada) {
                             continue;
@@ -1045,6 +999,40 @@ class SolicitudPagoResource extends Resource
     /**
      * @return array<string, float>
      */
+    public static function getAbonosPendientesSolicitudes(int $empresaId, array $empresas, array $sucursales): array
+    {
+        $detalles = \App\Models\SolicitudPagoDetalle::query()
+            ->where('erp_conexion', (string) $empresaId)
+            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
+            ->whereHas('solicitudPago', function ($q) {
+                $q->whereIn('estado', ['BORRADOR', 'APROBADA']);
+            })
+            ->with('solicitudPago')
+            ->get([
+                'erp_empresa_id',
+                'erp_sucursal',
+                'proveedor_codigo',
+                'numero_factura',
+                'abono_aplicado',
+                'erp_tabla',
+            ])
+            ->reject(fn(SolicitudPagoDetalle $detalle) => $detalle->isCompra());
+
+        $abonos = [];
+
+        $detalles
+            ->groupBy(fn(SolicitudPagoDetalle $detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
+            ->each(function ($items, string $key) use (&$abonos): void {
+                $abonos[$key] = (float) $items->sum(fn($detalle) => (float) ($detalle->abono_aplicado ?? 0));
+            });
+
+        return $abonos;
+    }
+
+    /**
+     * @return array<string, float>
+     */
     public static function getSaldosPendientesAprobados(int $empresaId, array $empresas, array $sucursales): array
     {
         $detalles = \App\Models\SolicitudPagoDetalle::query()
@@ -1052,7 +1040,7 @@ class SolicitudPagoResource extends Resource
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
             ->whereHas('solicitudPago', function ($q) {
-                $q->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
+                $q->whereIn('estado', ['BORRADOR', 'APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
             })
             ->with('solicitudPago')
             ->get([
@@ -1070,7 +1058,9 @@ class SolicitudPagoResource extends Resource
         $saldos = [];
 
         $detalles
-            ->filter(fn(SolicitudPagoDetalle $detalle) => strtoupper((string) $detalle->solicitudPago?->estado) === 'APROBADA')
+            ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                return in_array(strtoupper((string) $detalle->solicitudPago?->estado), ['BORRADOR', 'APROBADA'], true);
+            })
             ->groupBy(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
             ->each(function ($items, string $key) use (&$saldos): void {
                 $saldoBase = (float) $items->max(fn($detalle) => (float) ($detalle->saldo_al_crear ?? 0));
