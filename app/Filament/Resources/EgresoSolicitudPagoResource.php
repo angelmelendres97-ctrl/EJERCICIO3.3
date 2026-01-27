@@ -57,10 +57,26 @@ class EgresoSolicitudPagoResource extends Resource
                 TextColumn::make('motivo')
                     ->label('Motivo')
                     ->limit(40),
+                TextColumn::make('monto_aprobado')
+                    ->label('Abono aprobado')
+                    ->money('USD')
+                    ->sortable(),
                 TextColumn::make('monto_utilizado')
                     ->label('Abono a pagar')
                     ->money('USD')
                     ->sortable(),
+                TextColumn::make('total_egresado')
+                    ->label('Total egresado')
+                    ->money('USD')
+                    ->getStateUsing(function (SolicitudPago $record): float {
+                        $estado = strtoupper((string) $record->estado);
+
+                        if ($estado !== strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA)) {
+                            return 0;
+                        }
+
+                        return (float) ($record->monto_utilizado ?? 0);
+                    }),
                 TextColumn::make('estado')
                     ->badge()
                     ->formatStateUsing(function (string $state): string {
