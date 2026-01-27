@@ -286,6 +286,29 @@ class BuscarPedidosCompra extends Component implements HasForms, HasTable
                         fn($state, $record) =>
                         str_pad($record->pedi_cod_pedi, 8, "0", STR_PAD_LEFT)
                     ),
+                Tables\Columns\TextColumn::make('pedi_pri_pedi')
+                    ->label('Prioridad')
+                    ->badge()
+                    ->color(function ($state) {
+                        $normalized = strtolower(trim((string) $state));
+
+                        return match ($normalized) {
+                            'alta' => 'danger',
+                            'media' => 'warning',
+                            'baja' => 'success',
+                            default => 'gray',
+                        };
+                    })
+                    ->formatStateUsing(function ($state) {
+                        $normalized = strtolower(trim((string) $state));
+
+                        return match ($normalized) {
+                            'alta' => 'Alta',
+                            'media' => 'Media',
+                            'baja' => 'Baja',
+                            default => $state,
+                        };
+                    }),
                 Tables\Columns\TextColumn::make('pedi_res_pedi')->label('Responsable')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('pedi_det_pedi')->label('Motivo')->searchable()->wrap(),
                 Tables\Columns\TextColumn::make('pedi_fec_pedi')->label('Fecha Pedido')->date()->sortable(),

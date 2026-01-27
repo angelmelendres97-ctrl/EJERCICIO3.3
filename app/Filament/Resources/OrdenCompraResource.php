@@ -1218,7 +1218,7 @@ class OrdenCompraResource extends Resource
                     ->action(function (OrdenCompra $record) {
                         $record->update(['anulada' => true]);
 
-                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, 'Pendiente');
+                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, '0');
 
                         Notification::make()
                             ->title('Orden de compra anulada')
@@ -1233,7 +1233,7 @@ class OrdenCompraResource extends Resource
                     ->authorize(fn() => self::userIsAdmin())
                     ->action(function (OrdenCompra $record) {
                         \App\Services\OrdenCompraSyncService::eliminar($record);
-                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, 'Pendiente');
+                        \App\Services\OrdenCompraSyncService::actualizarEstadoPedidos($record, null, '0');
                         $record->delete();
                     })
                 //->disabled(fn(OrdenCompra $record) => $record->anulada),

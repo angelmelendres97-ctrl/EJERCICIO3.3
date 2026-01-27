@@ -311,7 +311,7 @@ class OrdenCompraSyncService
                             ->where('dped_cod_bode', $id_bodega)
                             ->first();
                         if ($sql_saedped) {
-                            //echo "¡Se encontró el registro!"; 
+                            //echo "¡Se encontró el registro!";
                             $dped_can_ped = $sql_saedped ? $sql_saedped->dped_can_ped : 0;
                             $dped_can_ent = $sql_saedped ? $sql_saedped->dped_can_ent : 0;
 
@@ -552,7 +552,7 @@ class OrdenCompraSyncService
                                 ->where('dped_cod_bode', $dmov_cod_bode)
                                 ->first();
                             if ($sql_saedped) {
-                                //echo "¡Se encontró el registro!"; 
+                                //echo "¡Se encontró el registro!";
                                 $dped_can_ped = $sql_saedped ? $sql_saedped->dped_can_ped : 0;
                                 $dped_can_ent = $sql_saedped ? $sql_saedped->dped_can_ent : 0;
 
@@ -589,7 +589,7 @@ class OrdenCompraSyncService
                 $amdg_id_empresa,
                 $amdg_id_sucursal,
                 self::normalizePedidosImportados($pedidos_importados),
-                'Pendiente'
+                '0'
             );
 
             foreach ($sql_data_saeminv as $key1 => $data_saeminv) {

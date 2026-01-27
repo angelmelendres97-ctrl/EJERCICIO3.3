@@ -92,7 +92,7 @@ class EditOrdenCompra extends EditRecord
                 ->disabled(fn() => $this->record->anulada)
                 ->action(function () {
                     OrdenCompraSyncService::eliminar($this->record);
-                    OrdenCompraSyncService::actualizarEstadoPedidos($this->record, null, 'Pendiente');
+                    OrdenCompraSyncService::actualizarEstadoPedidos($this->record, null, '0');
                     $this->record->delete();
                 }),
         ];
@@ -664,7 +664,7 @@ class EditOrdenCompra extends EditRecord
         }
 
         if (!empty($eliminados)) {
-            OrdenCompraSyncService::actualizarEstadoPedidos($this->record, $eliminados, 'Pendiente');
+            OrdenCompraSyncService::actualizarEstadoPedidos($this->record, $eliminados, '0');
         }
     }
 
