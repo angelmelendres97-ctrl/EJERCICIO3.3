@@ -754,8 +754,12 @@ class SolicitudPagoResource extends Resource
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
             ->with('solicitudPago')
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id'])
+            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id', 'erp_tabla'])
             ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                if ($detalle->isCompra()) {
+                    return false;
+                }
+
                 return self::shouldBlockFactura(
                     $detalle->solicitudPago?->estado,
                     $detalle->saldo_al_crear,
@@ -838,8 +842,12 @@ class SolicitudPagoResource extends Resource
             )
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id'])
+            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado', 'solicitud_pago_id', 'erp_tabla'])
             ->filter(function (SolicitudPagoDetalle $detalle): bool {
+                if ($detalle->isCompra()) {
+                    return false;
+                }
+
                 return self::shouldBlockFactura(
                     $detalle->solicitudPago?->estado,
                     $detalle->saldo_al_crear,
@@ -1020,11 +1028,15 @@ class SolicitudPagoResource extends Resource
         $estadoNormalizado = strtoupper((string) $estado);
         $estadoCompletada = strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA);
 
-        if (in_array($estadoNormalizado, ['APROBADA', $estadoCompletada], true)) {
+        if ($estadoNormalizado === 'APROBADA') {
             $saldo = (float) ($saldoAlCrear ?? 0);
             $abono = (float) ($abonoAplicado ?? 0);
 
             return $abono >= $saldo;
+        }
+
+        if ($estadoNormalizado === $estadoCompletada) {
+            return false;
         }
 
         return true;
@@ -1035,22 +1047,91 @@ class SolicitudPagoResource extends Resource
      */
     public static function getSaldosPendientesAprobados(int $empresaId, array $empresas, array $sucursales): array
     {
-        return \App\Models\SolicitudPagoDetalle::query()
+        $detalles = \App\Models\SolicitudPagoDetalle::query()
             ->where('erp_conexion', (string) $empresaId)
             ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
             ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
             ->whereHas('solicitudPago', function ($q) {
                 $q->whereIn('estado', ['APROBADA', SolicitudPago::ESTADO_SOLICITUD_COMPLETADA]);
             })
-            ->get(['erp_empresa_id', 'erp_sucursal', 'proveedor_codigo', 'numero_factura', 'saldo_al_crear', 'abono_aplicado'])
+            ->with('solicitudPago')
+            ->get([
+                'erp_empresa_id',
+                'erp_sucursal',
+                'proveedor_codigo',
+                'numero_factura',
+                'saldo_al_crear',
+                'abono_aplicado',
+                'erp_tabla',
+            ])
+            ->reject(fn(SolicitudPagoDetalle $detalle) => $detalle->isCompra());
+
+        $estadoCompletada = strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA);
+        $saldos = [];
+
+        $detalles
+            ->filter(fn(SolicitudPagoDetalle $detalle) => strtoupper((string) $detalle->solicitudPago?->estado) === 'APROBADA')
             ->groupBy(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
-            ->map(function ($items) {
+            ->each(function ($items, string $key) use (&$saldos): void {
                 $saldoBase = (float) $items->max(fn($detalle) => (float) ($detalle->saldo_al_crear ?? 0));
                 $abono = (float) $items->sum(fn($detalle) => (float) ($detalle->abono_aplicado ?? 0));
 
-                return max(0, $saldoBase - $abono);
-            })
-            ->all();
+                $saldos[$key] = max(0, $saldoBase - $abono);
+            });
+
+        $connectionName = self::getExternalConnectionName($empresaId);
+        $detallesCompletados = $detalles
+            ->filter(fn(SolicitudPagoDetalle $detalle) => strtoupper((string) $detalle->solicitudPago?->estado) === $estadoCompletada);
+
+        if ($connectionName && $detallesCompletados->isNotEmpty()) {
+            $detallesCompletados
+                ->groupBy(fn(SolicitudPagoDetalle $detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo)
+                ->each(function ($items) use (&$saldos, $connectionName): void {
+                    $primer = $items->first();
+                    $empresa = $primer->erp_empresa_id;
+                    $sucursal = $primer->erp_sucursal;
+                    $proveedor = $primer->proveedor_codigo;
+                    $facturas = $items->pluck('numero_factura')->filter()->unique()->values();
+
+                    if ($facturas->isEmpty()) {
+                        return;
+                    }
+
+                    $rows = DB::connection($connectionName)
+                        ->table('saedmcp')
+                        ->where('dmcp_cod_empr', $empresa)
+                        ->where('dmcp_cod_sucu', $sucursal)
+                        ->where('clpv_cod_clpv', $proveedor)
+                        ->whereIn('dmcp_num_fac', $facturas->all())
+                        ->where('dmcp_est_dcmp', '<>', 'AN')
+                        ->selectRaw('
+                            dmcp_cod_empr as empresa,
+                            dmcp_cod_sucu as sucursal,
+                            clpv_cod_clpv as proveedor_codigo,
+                            dmcp_num_fac as numero_factura,
+                            ABS(SUM(COALESCE(dcmp_deb_ml,0) - COALESCE(dcmp_cre_ml,0))) as saldo
+                        ')
+                        ->groupBy('dmcp_cod_empr', 'dmcp_cod_sucu', 'clpv_cod_clpv', 'dmcp_num_fac')
+                        ->havingRaw('SUM(COALESCE(dcmp_deb_ml,0) - COALESCE(dcmp_cre_ml,0)) <> 0')
+                        ->get();
+
+                    foreach ($rows as $row) {
+                        $key = $row->empresa . '|' . $row->sucursal . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+                        $saldos[$key] = (float) $row->saldo;
+                    }
+                });
+        } elseif ($detallesCompletados->isNotEmpty()) {
+            $detallesCompletados
+                ->groupBy(fn($detalle) => $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura)
+                ->each(function ($items, string $key) use (&$saldos): void {
+                    $saldoBase = (float) $items->max(fn($detalle) => (float) ($detalle->saldo_al_crear ?? 0));
+                    $abono = (float) $items->sum(fn($detalle) => (float) ($detalle->abono_aplicado ?? 0));
+
+                    $saldos[$key] = max(0, $saldoBase - $abono);
+                });
+        }
+
+        return $saldos;
     }
 
     /**

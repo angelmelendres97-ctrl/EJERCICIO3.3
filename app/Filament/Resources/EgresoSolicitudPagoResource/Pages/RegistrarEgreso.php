@@ -68,7 +68,7 @@ class RegistrarEgreso extends Page implements HasTable
 
     protected function hydrateProviderData(): void
     {
-        $detalles = $this->record->loadMissing('detalles')->detalles;
+        $detalles = $this->getDetallesSinCompras();
 
         $this->facturasByProvider = [];
         $this->providerContexts = [];
@@ -188,6 +188,14 @@ class RegistrarEgreso extends Page implements HasTable
                 COUNT(*) as facturas_count
             ')
             ->where('solicitud_pago_id', $this->record->getKey())
+            ->where(function (Builder $query): void {
+                $query->whereNull('erp_tabla')
+                    ->orWhereRaw('upper(erp_tabla) <> ?', ['COMPRA']);
+            })
+            ->where(function (Builder $query): void {
+                $query->whereNull('numero_factura')
+                    ->orWhere('numero_factura', 'not like', 'COMPRA-%');
+            })
             ->groupBy('proveedor_codigo', 'proveedor_nombre', 'proveedor_ruc')
             ->orderBy('proveedor_nombre');
     }
@@ -1148,17 +1156,25 @@ class RegistrarEgreso extends Page implements HasTable
 
     public function getTotalAbonoProperty(): float
     {
-        return (float) ($this->record->detalles?->sum('abono_aplicado') ?? 0);
+        return (float) $this->getDetallesSinCompras()->sum('abono_aplicado');
     }
 
     public function getTotalFacturasProperty(): int
     {
-        return (int) ($this->record->detalles?->count() ?? 0);
+        return (int) $this->getDetallesSinCompras()->count();
     }
 
     public function getTotalSaldoProperty(): float
     {
-        return (float) ($this->record->detalles?->sum('saldo_al_crear') ?? 0);
+        return (float) $this->getDetallesSinCompras()->sum('saldo_al_crear');
+    }
+
+    protected function getDetallesSinCompras(): \Illuminate\Support\Collection
+    {
+        return $this->record
+            ->loadMissing('detalles')
+            ->detalles
+            ->reject(fn(SolicitudPagoDetalle $detalle) => $detalle->isCompra());
     }
 
     public function getTotalAbonoHtmlProperty(): HtmlString
