@@ -302,18 +302,23 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 saedmcp.clpv_cod_clpv   as proveedor_codigo,
                 prov.clpv_nom_clpv      as proveedor_nombre,
                 prov.clpv_ruc_clpv      as proveedor_ruc,
-                prov.clpv_nom_clpv     as proveedor_descripcion,
+                prov.clpv_nom_clpv      as proveedor_descripcion,
                 saedmcp.dmcp_num_fac    as numero_factura,
-                MIN(saedmcp.dcmp_fec_emis) as fecha_emision,
+
+                MIN(saedmcp.dcmp_fec_emis) FILTER (WHERE COALESCE(saedmcp.dcmp_cre_ml,0) > 0) as fecha_emision,
                 MAX(saedmcp.dmcp_fec_ven)  as fecha_vencimiento,
-                ABS(SUM(
-                        COALESCE(saedmcp.dcmp_deb_ml, 0)
-                        - COALESCE(saedmcp.dcmp_cre_ml, 0)
-                    )) as saldo
-                 ')
+
+                SUM(COALESCE(saedmcp.dcmp_deb_ml,0)) as total_debito,
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) as total_credito,
+
+                SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) as saldo_real,
+                ABS(SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0))) as saldo_pendiente
+            ')
+
             ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
             ->orderBy('prov.clpv_nom_clpv')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) <> 0');
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) > 0')
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) < 0');
 
         return $query->get()
             ->reject(function ($row) use ($conexion, $registradas) {
@@ -332,8 +337,10 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
                 $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
-                $saldoFactura = abs((float) $row->saldo);
+                // saldo_pendiente ya es positivo (ABS) pero viene filtrado a solo facturas pendientes
+                $saldoFactura = (float) ($row->saldo_pendiente ?? 0);
                 $saldoPendiente = $saldosPendientes[$facturaKey] ?? $saldoFactura;
+
 
                 if (array_key_exists($facturaKey, $saldosPendientes)) {
                     $saldoPendiente = min($saldoFactura, $saldoPendiente);
