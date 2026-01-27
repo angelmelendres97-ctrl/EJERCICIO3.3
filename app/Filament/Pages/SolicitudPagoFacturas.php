@@ -1916,6 +1916,42 @@ $this->dispatch('refresh-resumen');
         return $this->groupByProveedor($registros);
     }
 
+    /**
+     * @return array<string, float>
+     */
+    protected function getCompromisosPendientes(int $conexion, array $empresas, array $sucursales): array
+    {
+        $query = \App\Models\SolicitudPagoDetalle::query()
+            ->where('erp_conexion', (string) $conexion)
+            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
+            ->whereHas('solicitudPago', fn($q) => $q->whereIn('estado', ['BORRADOR', 'APROBADA']))
+            ->with('solicitudPago')
+            ->get([
+                'solicitud_pago_id',
+                'erp_empresa_id',
+                'erp_sucursal',
+                'proveedor_codigo',
+                'numero_factura',
+                'abono_aplicado',
+                'erp_tabla',
+            ])
+            ->reject(fn(\App\Models\SolicitudPagoDetalle $detalle) => $detalle->isCompra());
+
+        if ($this->solicitud) {
+            $query = $query->reject(fn(\App\Models\SolicitudPagoDetalle $detalle) => $detalle->solicitud_pago_id === $this->solicitud->getKey());
+        }
+
+        $compromisos = [];
+
+        foreach ($query as $detalle) {
+            $key = ($detalle->erp_empresa_id ?? '') . '|' . ($detalle->erp_sucursal ?? '') . '|' . ($detalle->proveedor_codigo ?? '') . '|' . ($detalle->numero_factura ?? '');
+            $compromisos[$key] = ($compromisos[$key] ?? 0) + (float) ($detalle->abono_aplicado ?? 0);
+        }
+
+        return $compromisos;
+    }
+
     protected function fetchInvoices(int $conexion, array $empresas, array $sucursales, ?string $fechaDesde, ?string $fechaHasta, string $conexionNombre): array
     {
         $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
@@ -1927,6 +1963,7 @@ $this->dispatch('refresh-resumen');
         $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
         $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
         $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
+        $compromisosPendientes = $this->getCompromisosPendientes($conexion, $empresas, $sucursales);
 
         $query = DB::connection($connectionName)
             ->table('saedmcp')
@@ -1961,9 +1998,17 @@ $this->dispatch('refresh-resumen');
         }
 
         return $query->get()
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase) {
+            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $compromisosPendientes) {
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
+                $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+                $saldoBase = abs((float) ($row->saldo ?? 0));
+                $comprometido = (float) ($compromisosPendientes[$facturaKey] ?? 0);
+                $saldoDisponible = max(0, $saldoBase - $comprometido);
+
+                if ($saldoDisponible <= 0) {
+                    return null;
+                }
 
                 return [
                     'conexion_id' => $conexion,
@@ -1979,10 +2024,12 @@ $this->dispatch('refresh-resumen');
                     'numero' => $row->numero_factura,
                     'fecha_emision' => $row->fecha_emision,
                     'fecha_vencimiento' => $row->fecha_vencimiento,
-                    'total' => abs((float) $row->saldo),
-                    'saldo' => abs((float) $row->saldo),
+                    'total' => $saldoDisponible,
+                    'saldo' => $saldoDisponible,
                 ];
             })
+            ->filter()
+            ->values()
             ->all();
     }
 
