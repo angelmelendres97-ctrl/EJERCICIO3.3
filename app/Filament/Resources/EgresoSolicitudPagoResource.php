@@ -144,6 +144,10 @@ class EgresoSolicitudPagoResource extends Resource
                     ->size('sm'),
             ])
 
+            /*  ->bulkActions([
+                 Tables\Actions\DeleteBulkAction::make(),
+             ]) */
+
             ->filters([]);
     }
 

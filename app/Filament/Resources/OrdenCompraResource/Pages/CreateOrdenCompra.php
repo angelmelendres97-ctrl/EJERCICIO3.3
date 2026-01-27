@@ -65,13 +65,20 @@ class CreateOrdenCompra extends CreateRecord
     protected function handleRecordCreation(array $data): Model
     {
         return DB::transaction(function () use ($data) {
+
+            // Si por alguna razón Filament no envió 'detalles', lo tomamos del estado actual
+            if (!array_key_exists('detalles', $data)) {
+                $data['detalles'] = $this->data['detalles'] ?? [];
+            }
+
             $record = static::getModel()::create($data);
 
-            OrdenCompraSyncService::sincronizar($record, $this->data);
+            OrdenCompraSyncService::sincronizar($record, $data);
 
             return $record;
         });
     }
+
 
     protected function afterCreate(): void
     {

@@ -701,10 +701,21 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 ->icon('heroicon-o-document-plus')
                 ->color('primary')
                 ->modalWidth('lg')
+
+                // ✅ Cambia el texto del botón principal del modal
+                ->modalSubmitActionLabel('CONTINUAR')
+
                 ->form([
-                    Forms\Components\Placeholder::make('monto_estimado')
+                    // ✅ Mostrar monto estimado como "input" (solo lectura) y más grande
+                    Forms\Components\TextInput::make('monto_estimado')
                         ->label('Monto estimado (total seleccionado)')
-                        ->content(fn() => '$' . number_format($this->totalSeleccionado, 2, '.', ',')),
+                        ->prefix('$')
+                        ->default(fn() => number_format($this->totalSeleccionado, 2, '.', ','))
+                        ->disabled()
+                        ->dehydrated(false) // no se guarda / no viaja en el submit
+                        ->extraInputAttributes([
+                            'style' => 'font-size: 22px; font-weight: 700;',
+                        ]),
 
                     Forms\Components\TextInput::make('monto_aprobado')
                         ->label('Monto aprobado')
@@ -713,7 +724,10 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                         ->prefix('$')
                         ->default(fn() => $this->totalSeleccionado)
                         ->minValue(0.01)
-                        ->rule('gt:0'),
+                        ->rule('gt:0')
+                        ->extraInputAttributes([
+                            'style' => 'font-size: 18px; font-weight: 700;',
+                        ]),
 
                     Forms\Components\Textarea::make('motivo')
                         ->label('Comentario / Motivo')
@@ -723,6 +737,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                         ->placeholder('Ingrese el motivo o comentario de la solicitud de pago'),
                 ])
                 ->action(fn(array $data) => $this->createSolicitudPago($data)),
+
             Action::make('exportPdf')
                 ->label('Exportar PDF')
                 ->icon('heroicon-o-arrow-down-tray')
