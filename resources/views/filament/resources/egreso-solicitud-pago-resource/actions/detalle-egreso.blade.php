@@ -23,6 +23,46 @@
             {{ $conexiones ?: ($solicitud->empresa->nombre_empresa ?? $solicitud->id_empresa) }}</div>
     </div>
 
+    @php
+        $totalesGenerales = collect($reportes)->reduce(function (array $carry, $reporte) {
+            $debito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_dml_dasi ?? 0));
+            $credito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_cml_dasi ?? 0));
+
+            $carry['debito'] += $debito;
+            $carry['credito'] += $credito;
+
+            return $carry;
+        }, ['debito' => 0, 'credito' => 0]);
+
+        $totalesGenerales['saldo_final'] = $totalesGenerales['debito'] - $totalesGenerales['credito'];
+        $totalesGenerales['saldo_pendiente'] = abs($totalesGenerales['saldo_final']);
+    @endphp
+
+    {{-- <div class="rounded-lg border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900 dark:border-indigo-500/40 dark:bg-indigo-900/20 dark:text-indigo-100">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h4 class="text-xs font-semibold uppercase">Resumen general</h4>
+            <span class="text-xs text-indigo-700 dark:text-indigo-200">Totales acumulados del egreso</span>
+        </div>
+        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
+            <div>
+                <div class="text-[11px] uppercase text-indigo-500">Total débito</div>
+                <div class="text-base font-semibold">{{ number_format($totalesGenerales['debito'], 2) }}</div>
+            </div>
+            <div>
+                <div class="text-[11px] uppercase text-indigo-500">Total crédito</div>
+                <div class="text-base font-semibold">{{ number_format($totalesGenerales['credito'], 2) }}</div>
+            </div>
+            <div>
+                <div class="text-[11px] uppercase text-indigo-500">Saldo pendiente</div>
+                <div class="text-base font-semibold">{{ number_format($totalesGenerales['saldo_pendiente'], 2) }}</div>
+            </div>
+            <div>
+                <div class="text-[11px] uppercase text-indigo-500">Saldo final</div>
+                <div class="text-base font-semibold">{{ number_format($totalesGenerales['saldo_final'], 2) }}</div>
+            </div>
+        </div>
+    </div> --}}
+
     @forelse ($reportes as $reporte)
         <div class="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -81,6 +121,38 @@
                     </table>
                 </div>
             </div>
+
+            @php
+                $totalDebito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_dml_dasi ?? 0));
+                $totalCredito = collect($reporte['diario'] ?? [])->sum(fn($linea) => (float) ($linea->dasi_cml_dasi ?? 0));
+                $saldoFinal = $totalDebito - $totalCredito;
+                $saldoPendiente = abs($saldoFinal);
+            @endphp
+
+           {{--  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <h5 class="text-xs font-semibold uppercase">Resumen contable</h5>
+                    <span class="text-[11px] text-slate-500 dark:text-slate-300">Totales acumulados del asiento</span>
+                </div>
+                <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                    <div>
+                        <div class="text-[10px] uppercase text-slate-400">Total débito</div>
+                        <div class="font-semibold">{{ number_format($totalDebito, 2) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase text-slate-400">Total crédito</div>
+                        <div class="font-semibold">{{ number_format($totalCredito, 2) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase text-slate-400">Saldo pendiente</div>
+                        <div class="font-semibold">{{ number_format($saldoPendiente, 2) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase text-slate-400">Saldo final</div>
+                        <div class="font-semibold">{{ number_format($saldoFinal, 2) }}</div>
+                    </div>
+                </div>
+            </div> --}}
 
             <div>
                 <h5 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-300">Directorio</h5>
