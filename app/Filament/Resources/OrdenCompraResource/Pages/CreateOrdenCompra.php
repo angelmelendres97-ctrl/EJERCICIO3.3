@@ -136,6 +136,8 @@ class CreateOrdenCompra extends CreateRecord
                 'u.unid_nom_unid',
                 'u.unid_sigl_unid',
             ])
+            ->orderBy('d.dped_cod_pedi')
+            ->orderBy('d.dped_cod_dped')
             ->get();
 
 
