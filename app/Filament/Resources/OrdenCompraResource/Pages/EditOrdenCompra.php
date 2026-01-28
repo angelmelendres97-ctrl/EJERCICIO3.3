@@ -27,6 +27,13 @@ class EditOrdenCompra extends EditRecord
         ];
     }
 
+    protected function authorizeAccess(): void
+    {
+        parent::authorizeAccess();
+
+        abort_unless(OrdenCompraResource::canEdit($this->record), 403);
+    }
+
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['info_proveedor'] = $data['id_proveedor'] ?? null;
@@ -249,7 +256,10 @@ class EditOrdenCompra extends EditRecord
             'u.unid_cod_unid',
             'u.unid_nom_unid',
             'u.unid_sigl_unid',
-        ])->get();
+        ])
+            ->orderBy('d.dped_cod_pedi')
+            ->orderBy('d.dped_cod_dped')
+            ->get();
 
         if ($detalles->isEmpty()) {
             // igual actualiza solicitado_por y cierra modal
