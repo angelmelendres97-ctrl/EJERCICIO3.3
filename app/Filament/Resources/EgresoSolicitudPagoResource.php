@@ -39,6 +39,9 @@ class EgresoSolicitudPagoResource extends Resource
         return $table
             ->defaultSort('created_at', 'desc')
             ->recordUrl(null)
+            //acciones al inicio
+            ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
+
             ->columns([
                 TextColumn::make('id')
                     ->label('Num')
@@ -57,6 +60,23 @@ class EgresoSolicitudPagoResource extends Resource
                 TextColumn::make('motivo')
                     ->label('Motivo')
                     ->limit(40),
+                TextColumn::make('estado')
+                    ->badge()
+                    ->formatStateUsing(function (string $state): string {
+                        return match (strtoupper($state)) {
+                            'APROBADA' => 'Aprobada y pendiente de egreso',
+                            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'Solicitud Aprobada Anulada',
+                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'Solicitud Completada',
+                            default => $state,
+                        };
+                    })
+                    ->color(fn(string $state) => match (strtoupper($state)) {
+                        'APROBADA' => 'warning',
+                        strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'danger',
+                        strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'success',
+                        default => 'gray',
+                    })
+                    ->label('Estado'),
                 TextColumn::make('monto_aprobado')
                     ->label('Abono aprobado')
                     ->money('USD')
@@ -77,23 +97,7 @@ class EgresoSolicitudPagoResource extends Resource
 
                         return (float) ($record->monto_utilizado ?? 0);
                     }),
-                TextColumn::make('estado')
-                    ->badge()
-                    ->formatStateUsing(function (string $state): string {
-                        return match (strtoupper($state)) {
-                            'APROBADA' => 'Aprobada y pendiente de egreso',
-                            strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'Solicitud Aprobada Anulada',
-                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'Solicitud Completada',
-                            default => $state,
-                        };
-                    })
-                    ->color(fn(string $state) => match (strtoupper($state)) {
-                        'APROBADA' => 'warning',
-                        strtoupper(SolicitudPago::ESTADO_APROBADA_ANULADA) => 'danger',
-                        strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA) => 'success',
-                        default => 'gray',
-                    })
-                    ->label('Estado'),
+
             ])
             ->actions([
                 Tables\Actions\Action::make('registrarEgreso')
@@ -106,7 +110,7 @@ class EgresoSolicitudPagoResource extends Resource
                     ->button()
                     ->size('sm'),
                 Tables\Actions\Action::make('detalleEgreso')
-                    ->label('Detalle de egreso')
+                    ->label('Ver Egreso')
                     ->icon('heroicon-o-eye')
                     ->color('info')
                     ->modalHeading('Detalle de egreso')
@@ -123,32 +127,12 @@ class EgresoSolicitudPagoResource extends Resource
                     ->visible(fn(SolicitudPago $record) => strtoupper((string) $record->estado) === strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA))
                     ->button()
                     ->size('sm'),
-
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('descargarPdf')
-                        ->label('Solicitud PDF')
-                        ->icon('heroicon-o-document-arrow-down')
-                        ->color('danger')
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportPdf($record)),
-
-                    Tables\Actions\Action::make('descargarPdfDetallado')
-                        ->label('Solicitud PDF Detallado')
-                        ->icon('heroicon-o-document-magnifying-glass')
-                        ->color('danger')
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedPdf($record)),
-
-                    Tables\Actions\Action::make('descargarExcel')
-                        ->label('Solicitud EXCEL')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportExcel($record)),
-                ])
-                    ->label('Descargar')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('gray')
-                    ->button()
-                    ->size('sm'),
-
+                Tables\Actions\Action::make('descargarPdfDetallado')
+                    ->label('PDF Solicitud')
+                    ->icon('heroicon-o-document-magnifying-glass')
+                    ->color('danger')
+                    ->url(fn(\App\Models\SolicitudPago $record) => route('solicitud-pago.pdf', $record))
+                    ->openUrlInNewTab(),
                 Tables\Actions\Action::make('anularSolicitud')
                     ->label('Anular')
                     ->icon('heroicon-o-x-circle')
