@@ -1214,7 +1214,7 @@ class OrdenCompraResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(fn(OrdenCompra $record) => auth()->user()->can('Actualizar') && !$record->anulada)
+                    ->visible(fn(OrdenCompra $record) => self::canEdit($record) && !$record->anulada)
                     ->action(function (OrdenCompra $record) {
                         $record->update(['anulada' => true]);
 
@@ -1248,7 +1248,9 @@ class OrdenCompraResource extends Resource
 
     public static function canEdit(Model $record): bool
     {
-        return auth()->user()->can('Actualizar') && !$record->anulada;
+        return auth()->user()->can('Actualizar')
+            && (int) $record->id_usuario === (int) auth()->id()
+            && !$record->anulada;
     }
 
     public static function canDelete(Model $record): bool

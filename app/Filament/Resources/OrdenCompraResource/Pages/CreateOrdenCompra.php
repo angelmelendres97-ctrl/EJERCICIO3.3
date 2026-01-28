@@ -130,6 +130,18 @@ class CreateOrdenCompra extends CreateRecord
             ->whereIn('d.dped_cod_pedi', $pedidos)
             ->where('d.dped_cod_empr', $this->data['amdg_id_empresa'])
             ->where('d.dped_cod_sucu', $this->data['amdg_id_sucursal'])
+            ->when(!empty($pedidos), function ($query) use ($pedidos) {
+                $orderBindings = collect($pedidos)->values()->all();
+                $orderCases = collect($orderBindings)
+                    ->map(fn($pedido, $index) => "WHEN d.dped_cod_pedi = ? THEN {$index}")
+                    ->implode(' ');
+
+                $query->orderByRaw(
+                    "CASE {$orderCases} ELSE " . count($orderBindings) . " END",
+                    $orderBindings
+                );
+            })
+            ->orderBy('d.dped_cod_dped')
             ->select([
                 'd.*',
                 'u.unid_cod_unid',
