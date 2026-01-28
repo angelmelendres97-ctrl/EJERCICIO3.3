@@ -254,6 +254,22 @@ class ResumenPedidosResource extends Resource
                             ->default(true)
                             ->helperText('Si está activo, solo se listarán órdenes creadas por el usuario actual.')
                             ->live(),
+                        Forms\Components\Checkbox::make('seleccionar_todas_ordenes')
+                            ->label('Seleccionar todas')
+                            ->live()
+                            ->afterStateUpdated(function (Get $get, Set $set, ?bool $state): void {
+                                $ordenes = $get('ordenes_compra') ?? [];
+                                if (! is_array($ordenes)) {
+                                    return;
+                                }
+
+                                $seleccionar = (bool) $state;
+                                foreach ($ordenes as $index => $orden) {
+                                    $ordenes[$index]['checkbox_oc'] = $seleccionar;
+                                }
+
+                                $set('ordenes_compra', $ordenes);
+                            }),
                         Forms\Components\Repeater::make('ordenes_compra')
                             ->schema([
                                 Forms\Components\TextInput::make('id_orden_compra')->label('Secuencial')->readOnly()->columnSpan(2),
@@ -404,6 +420,7 @@ class ResumenPedidosResource extends Resource
                                         'proveedor' => $orden->proveedor,
                                         'total_fact' => $orden->total,
                                         'fecha_oc' => $orden->fecha_pedido ? $orden->fecha_pedido->format('Y-m-d') : null,
+                                        'checkbox_oc' => false,
                                     ];
                                 })->toArray();
 
