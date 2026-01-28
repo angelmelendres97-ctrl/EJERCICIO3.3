@@ -310,7 +310,7 @@ class ComparativoProveedores extends Page
         if ($pivot) {
             $pivot->$field = $value;
             $pivot->save();
-            // Trigger load to refresh view/calculations? 
+            // Trigger load to refresh view/calculations?
             // Better to do it purely frontend with alpine or simplistic livewire binding
         }
     }

@@ -55,4 +55,7 @@ class OrdenCompraController extends Controller
         // Returns the PDF as a download.
         return $pdf->stream('orden-compra-' . $ordenCompra->id . '.pdf');
     }
+
+
+
 }

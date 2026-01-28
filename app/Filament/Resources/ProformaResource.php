@@ -210,13 +210,19 @@ class ProformaResource extends Resource
                                             ->label('Ingreso manual')
                                             ->dehydrated(false)
                                             ->live()
+                                            ->columnSpanFull() // ✅ arriba ocupando toda la fila
                                             ->afterStateHydrated(function (Forms\Components\Checkbox $component, Get $get): void {
                                                 $isManual = empty($get('id_bodega')) && !empty($get('codigo_producto')) && !empty($get('producto'));
                                                 $component->state($isManual);
                                             })
                                             ->afterStateUpdated(function (Set $set, Get $get, ?bool $state): void {
+                                                // lo dejamos para el punto 2
+                                            })
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state): void {
+
                                                 if ($state) {
-                                                    $set('id_bodega', null);
+                                                    // ✅ “quemado” para cumplir NOT NULL
+                                                    $set('id_bodega', 1); // <- AJUSTA si tu bodega manual no es 1
                                                 }
 
                                                 $set('codigo_producto', null);
@@ -225,33 +231,38 @@ class ProformaResource extends Resource
                                                 $set('impuesto', 0);
 
                                                 self::updateTotals($get, $set);
-                                            })
-                                            ->columnSpan(2),
+                                            }),
 
+                                        // ✅ BODEGA cuando es MANUAL (fija)
+                                        Forms\Components\Select::make('id_bodega')
+                                            ->label('Bodega')
+                                            ->options([1 => 'INGRESO MANUAL'])
+                                            ->disabled()
+                                            ->dehydrated(true) // ✅ se guarda en BD
+                                            ->visible(fn(Get $get) => (bool) $get('es_manual'))
+                                            ->required()
+                                            ->columnSpan(3),
+
+                                        // ✅ BODEGA normal cuando NO es manual
                                         Forms\Components\Select::make('id_bodega')
                                             ->label('Bodega')
                                             ->options(function (Get $get) {
                                                 $empresaId = $get('../../id_empresa');
                                                 $amdg_id_empresa = $get('../../amdg_id_empresa');
                                                 $amdg_id_sucursal = $get('../../amdg_id_sucursal');
-                                                if (!$empresaId || !$amdg_id_empresa)
-                                                    return [];
-                                                $connectionName = self::getExternalConnectionName($empresaId);
-                                                if (!$connectionName)
-                                                    return [];
 
-                                                try {
-                                                    return DB::connection($connectionName)
-                                                        ->table('saebode')
-                                                        ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
-                                                        ->where('subo_cod_empr', $amdg_id_empresa)
-                                                        ->where('bode_cod_empr', $amdg_id_empresa)
-                                                        ->where('subo_cod_sucu', $amdg_id_sucursal)
-                                                        ->pluck('bode_nom_bode', 'bode_cod_bode')
-                                                        ->all();
-                                                } catch (\Exception $e) {
-                                                    return [];
-                                                }
+                                                if (!$empresaId || !$amdg_id_empresa) return [];
+                                                $connectionName = self::getExternalConnectionName($empresaId);
+                                                if (!$connectionName) return [];
+
+                                                return DB::connection($connectionName)
+                                                    ->table('saebode')
+                                                    ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
+                                                    ->where('subo_cod_empr', $amdg_id_empresa)
+                                                    ->where('bode_cod_empr', $amdg_id_empresa)
+                                                    ->where('subo_cod_sucu', $amdg_id_sucursal)
+                                                    ->pluck('bode_nom_bode', 'bode_cod_bode')
+                                                    ->all();
                                             })
                                             ->required(fn(Get $get) => !(bool) $get('es_manual'))
                                             ->live()
@@ -599,9 +610,9 @@ class ProformaResource extends Resource
 
         // 4. Set Globals
         // If item context (detalles.uuid.field), '../../' is 'detalles' array.
-        // 'subtotal' is a sibling of 'detalles'. 
+        // 'subtotal' is a sibling of 'detalles'.
         // So we need to go up from 'detalles' array -> Parent.
-        // In Filament state paths: 
+        // In Filament state paths:
         // Field: detalles.uuid.field
         // ../ : detalles.uuid
         // ../../ : detalles (value)
