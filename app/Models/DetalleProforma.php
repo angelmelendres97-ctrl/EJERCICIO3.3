@@ -22,6 +22,7 @@ class DetalleProforma extends Model
         'detalle',
         'cantidad_aprobada',
         'unidad',
+        'es_manual',
     ];
 
     protected $casts = [
@@ -31,6 +32,7 @@ class DetalleProforma extends Model
         'impuesto' => 'float',
         'valor_impuesto' => 'float',
         'total' => 'float',
+        'es_manual' => 'boolean',
     ];
 
     public function proforma(): BelongsTo

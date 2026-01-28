@@ -19,6 +19,7 @@ use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Placeholder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Filament\Notifications\Notification;
 
 class ProformaResource extends Resource
 {
@@ -27,6 +28,13 @@ class ProformaResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
     protected static ?string $navigationGroup = 'Compras';
+
+    protected static function userIsAdmin(): bool
+    {
+        $user = auth()->user();
+
+        return $user?->hasRole('ADMINISTRADOR') ?? false;
+    }
 
     public static function getExternalConnectionName(int $empresaId): ?string
     {
@@ -204,7 +212,21 @@ class ProformaResource extends Resource
                             ->relationship()
                             ->schema([
                                 Grid::make(12)
-                                    ->schema([
+                                    ->schema(fn (Get $get): array => [
+                                        Forms\Components\Toggle::make('es_manual')
+                                            ->label('Ingreso manual')
+                                            ->inline(false)
+                                            ->default(false)
+                                            ->live()
+                                            ->columnSpan(2)
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state) {
+                                                if ($state) {
+                                                    $set('codigo_producto', null);
+                                                    $set('producto', null);
+                                                }
+
+                                                self::updateTotals($get, $set);
+                                            }),
                                         Forms\Components\Select::make('id_bodega')
                                             ->label('Bodega')
                                             ->options(function (Get $get) {
@@ -234,21 +256,66 @@ class ProformaResource extends Resource
                                             ->live()
                                             ->columnSpan(3),
 
-                                        Forms\Components\Select::make('codigo_producto')
-                                            ->label('Producto')
-                                            ->options(function (Get $get) {
-                                                $empresaId = $get('../../id_empresa');
-                                                $amdg_id_empresa = $get('../../amdg_id_empresa');
-                                                $amdg_id_sucursal = $get('../../amdg_id_sucursal');
-                                                $id_bodega = $get('id_bodega');
-                                                if (!$empresaId || !$id_bodega)
-                                                    return [];
-                                                $connectionName = self::getExternalConnectionName($empresaId);
-                                                if (!$connectionName)
-                                                    return [];
+                                        $get('es_manual')
+                                            ? Forms\Components\TextInput::make('codigo_producto')
+                                                ->label('Código')
+                                                ->required()
+                                                ->live()
+                                                ->columnSpan(3)
+                                                ->afterStateUpdated(function (Set $set, Get $get) {
+                                                    self::updateTotals($get, $set);
+                                                })
+                                            : Forms\Components\Select::make('codigo_producto')
+                                                ->label('Producto')
+                                                ->options(function (Get $get) {
+                                                    $empresaId = $get('../../id_empresa');
+                                                    $amdg_id_empresa = $get('../../amdg_id_empresa');
+                                                    $amdg_id_sucursal = $get('../../amdg_id_sucursal');
+                                                    $id_bodega = $get('id_bodega');
+                                                    if (!$empresaId || !$id_bodega)
+                                                        return [];
+                                                    $connectionName = self::getExternalConnectionName($empresaId);
+                                                    if (!$connectionName)
+                                                        return [];
 
-                                                try {
-                                                    return DB::connection($connectionName)
+                                                    try {
+                                                        return DB::connection($connectionName)
+                                                            ->table('saeprod')
+                                                            ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
+                                                            ->where('prod_cod_sucu', $amdg_id_sucursal)
+                                                            ->where('prod_cod_empr', $amdg_id_empresa)
+                                                            ->where('prbo_cod_empr', $amdg_id_empresa)
+                                                            ->where('prbo_cod_sucu', $amdg_id_sucursal)
+                                                            ->where('prbo_cod_bode', $id_bodega)
+                                                            ->select([
+                                                                'prod_cod_prod',
+                                                                DB::raw("prod_nom_prod || ' (' || prod_cod_prod || ')' AS productos_etiqueta")
+                                                            ])
+                                                            ->orderBy('productos_etiqueta', 'asc')
+                                                            ->pluck('productos_etiqueta', 'prod_cod_prod');
+                                                    } catch (\Exception $e) {
+                                                        return [];
+                                                    }
+                                                })
+                                                ->searchable()
+                                                ->live()
+                                                ->required()
+                                                ->columnSpan(4)
+                                                ->afterStateUpdated(function (Set $set, Get $get, ?string $state) {
+                                                    if (!$state) {
+                                                        $set('producto', null);
+                                                        $set('costo', 0);
+                                                        self::updateTotals($get, $set);
+                                                        return;
+                                                    }
+                                                    // Fetch product details
+                                                    $empresaId = $get('../../id_empresa');
+                                                    $amdg_id_empresa = $get('../../amdg_id_empresa');
+                                                    $amdg_id_sucursal = $get('../../amdg_id_sucursal');
+                                                    $id_bodega = $get('id_bodega');
+                                                    $connectionName = self::getExternalConnectionName($empresaId);
+
+                                                    $data = DB::connection($connectionName)
                                                         ->table('saeprod')
                                                         ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
                                                         ->where('prod_cod_sucu', $amdg_id_sucursal)
@@ -256,59 +323,35 @@ class ProformaResource extends Resource
                                                         ->where('prbo_cod_empr', $amdg_id_empresa)
                                                         ->where('prbo_cod_sucu', $amdg_id_sucursal)
                                                         ->where('prbo_cod_bode', $id_bodega)
-                                                        ->select([
-                                                            'prod_cod_prod',
-                                                            DB::raw("prod_nom_prod || ' (' || prod_cod_prod || ')' AS productos_etiqueta")
-                                                        ])
-                                                        ->orderBy('productos_etiqueta', 'asc')
-                                                        ->pluck('productos_etiqueta', 'prod_cod_prod');
-                                                } catch (\Exception $e) {
-                                                    return [];
-                                                }
-                                            })
-                                            ->searchable()
-                                            ->live()
-                                            ->required()
-                                            ->columnSpan(4)
-                                            ->afterStateUpdated(function (Set $set, Get $get, ?string $state) {
-                                                if (!$state) {
-                                                    $set('producto', null);
-                                                    $set('costo', 0);
-                                                    return;
-                                                }
-                                                // Fetch product details
-                                                $empresaId = $get('../../id_empresa');
-                                                $amdg_id_empresa = $get('../../amdg_id_empresa');
-                                                $amdg_id_sucursal = $get('../../amdg_id_sucursal');
-                                                $id_bodega = $get('id_bodega');
-                                                $connectionName = self::getExternalConnectionName($empresaId);
+                                                        ->where('prbo_cod_prod', $state)
+                                                        ->where('prod_cod_prod', $state)
+                                                        ->select('prbo_uco_prod', 'prbo_iva_porc', 'prod_nom_prod')
+                                                        ->first();
 
-                                                $data = DB::connection($connectionName)
-                                                    ->table('saeprod')
-                                                    ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
-                                                    ->where('prod_cod_sucu', $amdg_id_sucursal)
-                                                    ->where('prod_cod_empr', $amdg_id_empresa)
-                                                    ->where('prbo_cod_empr', $amdg_id_empresa)
-                                                    ->where('prbo_cod_sucu', $amdg_id_sucursal)
-                                                    ->where('prbo_cod_bode', $id_bodega)
-                                                    ->where('prbo_cod_prod', $state)
-                                                    ->where('prod_cod_prod', $state)
-                                                    ->select('prbo_uco_prod', 'prbo_iva_porc', 'prod_nom_prod')
-                                                    ->first();
+                                                    if ($data) {
+                                                        $set('costo', number_format($data->prbo_uco_prod, 6, '.', ''));
+                                                        $set('impuesto', 0); // Implicit 0 since requested to hide
+                                                        $set('producto', $data->prod_nom_prod);
+                                                    }
 
-                                                if ($data) {
-                                                    $set('costo', number_format($data->prbo_uco_prod, 6, '.', ''));
-                                                    $set('impuesto', 0); // Implicit 0 since requested to hide
-                                                    $set('producto', $data->prod_nom_prod);
-                                                }
-                                            }),
+                                                    self::updateTotals($get, $set);
+                                                }),
 
-                                        Forms\Components\Hidden::make('producto'),
+                                        $get('es_manual')
+                                            ? Forms\Components\TextInput::make('producto')
+                                                ->label('Descripción')
+                                                ->required()
+                                                ->live()
+                                                ->columnSpan(4)
+                                                ->afterStateUpdated(function (Set $set, Get $get) {
+                                                    self::updateTotals($get, $set);
+                                                })
+                                            : Forms\Components\Hidden::make('producto'),
 
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->default(1)
-                                            ->live(onBlur: true)
+                                            ->live()
                                             ->required()
                                             ->columnSpan(1)
                                             ->afterStateUpdated(function (Set $set, Get $get) {
@@ -321,7 +364,7 @@ class ProformaResource extends Resource
                                             ->label('Costo Ref.')
                                             ->numeric()
                                             ->prefix('$')
-                                            ->live(onBlur: true)
+                                            ->live()
                                             ->columnSpan(2)
                                             ->afterStateUpdated(function (Set $set, Get $get) {
                                                 self::updateTotals($get, $set);
@@ -368,7 +411,9 @@ class ProformaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('id')
+                    ->label('Núm')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('amdg_id_empresa')
                     ->label('Empresa')
                     ->formatStateUsing(function ($state, $record) {
@@ -432,13 +477,37 @@ class ProformaResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('Ver Detalles'),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                    ->label('Ver Detalles')
+                    ->modalContent(fn(Proforma $record) => view(
+                        'filament.resources.proforma-resource.components.detalle-proforma-modal',
+                        ['record' => $record->loadMissing('detalles')]
+                    ))
+                    ->modalSubmitAction(false)
+                    ->modalCancelAction(fn(\Filament\Actions\StaticAction $action) => $action->label('Cerrar')),
+                Tables\Actions\Action::make('anular')
+                    ->label('Anular')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn(Proforma $record) => $record->estado === 'Pendiente')
+                    ->action(function (Proforma $record) {
+                        $record->update(['estado' => 'Anulada']);
+
+                        Notification::make()
+                            ->title('Proforma anulada correctamente')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn(Proforma $record) => $record->estado === 'Pendiente'),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn() => self::userIsAdmin())
+                    ->authorize(fn() => self::userIsAdmin()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => self::userIsAdmin()),
                 ]),
             ]);
     }
@@ -457,6 +526,16 @@ class ProformaResource extends Resource
             'create' => Pages\CreateProforma::route('/create'),
             'edit' => Pages\EditProforma::route('/{record}/edit'),
         ];
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return $record->estado === 'Pendiente';
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return self::userIsAdmin();
     }
 
     public static function updateTotals(Get $get, Set $set): void

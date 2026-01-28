@@ -237,6 +237,20 @@ class ResumenPedidosResource extends Resource
 
                 Forms\Components\Section::make('Traer información Ordenes Compra')
                     ->schema([
+                        Forms\Components\Toggle::make('seleccionar_todas')
+                            ->label('Seleccionar todas las órdenes visibles')
+                            ->helperText('Aplica solo a las órdenes listadas actualmente.')
+                            ->dehydrated(false)
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state) {
+                                $ordenes = $get('ordenes_compra') ?? [];
+
+                                foreach ($ordenes as $index => $orden) {
+                                    $ordenes[$index]['checkbox_oc'] = (bool) $state;
+                                }
+
+                                $set('ordenes_compra', $ordenes);
+                            }),
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\DatePicker::make('fecha_desde')
@@ -404,9 +418,11 @@ class ResumenPedidosResource extends Resource
                                         'proveedor' => $orden->proveedor,
                                         'total_fact' => $orden->total,
                                         'fecha_oc' => $orden->fecha_pedido ? $orden->fecha_pedido->format('Y-m-d') : null,
+                                        'checkbox_oc' => false,
                                     ];
                                 })->toArray();
 
+                                $set('seleccionar_todas', false);
                                 $set('ordenes_compra', $pedidos);
                             })
                         //->visible(fn(Get $get) => !empty($get('id_empresa')) && !empty($get('amdg_id_empresa')) && !empty($get('amdg_id_sucursal')))
