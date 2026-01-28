@@ -28,6 +28,13 @@ class ProformaResource extends Resource
 
     protected static ?string $navigationGroup = 'Compras';
 
+    public static function userIsAdmin(): bool
+    {
+        $user = auth()->user();
+
+        return $user?->hasRole('ADMINISTRADOR') ?? false;
+    }
+
     public static function getExternalConnectionName(int $empresaId): ?string
     {
         $empresa = Empresa::find($empresaId);
@@ -234,8 +241,8 @@ class ProformaResource extends Resource
                                             ->live()
                                             ->columnSpan(3),
 
-                                        Forms\Components\Select::make('codigo_producto')
-                                            ->label('Producto')
+                                        Forms\Components\Select::make('codigo_producto_catalogo')
+                                            ->label('Producto (Inventario)')
                                             ->options(function (Get $get) {
                                                 $empresaId = $get('../../id_empresa');
                                                 $amdg_id_empresa = $get('../../amdg_id_empresa');
@@ -268,12 +275,10 @@ class ProformaResource extends Resource
                                             })
                                             ->searchable()
                                             ->live()
-                                            ->required()
                                             ->columnSpan(4)
+                                            ->dehydrated(false)
                                             ->afterStateUpdated(function (Set $set, Get $get, ?string $state) {
                                                 if (!$state) {
-                                                    $set('producto', null);
-                                                    $set('costo', 0);
                                                     return;
                                                 }
                                                 // Fetch product details
@@ -297,13 +302,24 @@ class ProformaResource extends Resource
                                                     ->first();
 
                                                 if ($data) {
-                                                    $set('costo', number_format($data->prbo_uco_prod, 6, '.', ''));
-                                                    $set('impuesto', 0); // Implicit 0 since requested to hide
-                                                    $set('producto', $data->prod_nom_prod);
-                                                }
+                                                $set('costo', number_format($data->prbo_uco_prod, 6, '.', ''));
+                                                $set('impuesto', 0); // Implicit 0 since requested to hide
+                                                $set('producto', $data->prod_nom_prod);
+                                                $set('codigo_producto', $state);
+                                            }
+
+                                                self::updateTotals($get, $set);
                                             }),
 
-                                        Forms\Components\Hidden::make('producto'),
+                                        Forms\Components\TextInput::make('codigo_producto')
+                                            ->label('Código')
+                                            ->required()
+                                            ->columnSpan(2),
+
+                                        Forms\Components\TextInput::make('producto')
+                                            ->label('Descripción')
+                                            ->required()
+                                            ->columnSpan(4),
 
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
@@ -368,7 +384,9 @@ class ProformaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('id')
+                    ->label('Código')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('amdg_id_empresa')
                     ->label('Empresa')
                     ->formatStateUsing(function ($state, $record) {
@@ -434,11 +452,24 @@ class ProformaResource extends Resource
                 Tables\Actions\ViewAction::make()
                     ->label('Ver Detalles'),
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\Action::make('anular')
+                    ->label('Anular')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn(Proforma $record) => auth()->user()->can('Actualizar') && $record->estado !== 'Anulada')
+                    ->action(function (Proforma $record) {
+                        $record->update(['estado' => 'Anulada']);
+                    }),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn(Proforma $record) => self::userIsAdmin())
+                    ->authorize(fn() => self::userIsAdmin()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => self::userIsAdmin())
+                        ->authorize(fn() => self::userIsAdmin()),
                 ]),
             ]);
     }

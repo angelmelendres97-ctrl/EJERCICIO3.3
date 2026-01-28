@@ -254,6 +254,18 @@ class ResumenPedidosResource extends Resource
                             ->default(true)
                             ->helperText('Si está activo, solo se listarán órdenes creadas por el usuario actual.')
                             ->live(),
+                        Forms\Components\Checkbox::make('seleccionar_todos')
+                            ->label('Seleccionar todas las órdenes visibles')
+                            ->helperText('Aplica solo a las órdenes mostradas en la lista actual.')
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, Get $get, bool $state) {
+                                $ordenes = $get('ordenes_compra') ?? [];
+                                $ordenes = array_map(function ($orden) use ($state) {
+                                    $orden['checkbox_oc'] = $state;
+                                    return $orden;
+                                }, $ordenes);
+                                $set('ordenes_compra', $ordenes);
+                            }),
                         Forms\Components\Repeater::make('ordenes_compra')
                             ->schema([
                                 Forms\Components\TextInput::make('id_orden_compra')->label('Secuencial')->readOnly()->columnSpan(2),
@@ -407,6 +419,7 @@ class ResumenPedidosResource extends Resource
                                     ];
                                 })->toArray();
 
+                                $set('seleccionar_todos', false);
                                 $set('ordenes_compra', $pedidos);
                             })
                         //->visible(fn(Get $get) => !empty($get('id_empresa')) && !empty($get('amdg_id_empresa')) && !empty($get('amdg_id_sucursal')))
