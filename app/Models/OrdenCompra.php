@@ -62,7 +62,10 @@ class OrdenCompra extends Model
 
     public function detalles()
     {
-        return $this->hasMany(DetalleOrdenCompra::class, 'id_orden_compra');
+        return $this->hasMany(DetalleOrdenCompra::class, 'id_orden_compra')
+            ->orderBy('pedido_codigo')
+            ->orderBy('pedido_detalle_id')
+            ->orderBy('id');
     }
 
     protected static function booted()

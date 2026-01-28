@@ -244,6 +244,9 @@ class EditOrdenCompra extends EditRecord
         // opcional: si quieres solo pendientes por ENTREGADO también, descomenta:
         // $query->whereColumn('d.dped_can_ped', '>', 'd.dped_can_ent');
 
+        $query->orderBy('d.dped_cod_pedi')
+            ->orderBy('d.dped_cod_dped');
+
         $detalles = $query->select([
             'd.*',
             'u.unid_cod_unid',

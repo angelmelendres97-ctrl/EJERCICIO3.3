@@ -130,6 +130,8 @@ class CreateOrdenCompra extends CreateRecord
             ->whereIn('d.dped_cod_pedi', $pedidos)
             ->where('d.dped_cod_empr', $this->data['amdg_id_empresa'])
             ->where('d.dped_cod_sucu', $this->data['amdg_id_sucursal'])
+            ->orderBy('d.dped_cod_pedi')
+            ->orderBy('d.dped_cod_dped')
             ->select([
                 'd.*',
                 'u.unid_cod_unid',
