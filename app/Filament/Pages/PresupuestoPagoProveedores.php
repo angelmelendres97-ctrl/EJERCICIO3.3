@@ -309,21 +309,19 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 SUM(COALESCE(saedmcp.dcmp_deb_ml,0)) as total_debito,
                 SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) as total_credito,
 
-                SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) as saldo_real,
-                ABS(SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0))) as saldo_pendiente
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) as saldo_pendiente
             ')
 
             ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
             ->orderBy('prov.clpv_nom_clpv')
             ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) > 0')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) < 0');
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) > 0');
 
         return $query->get()
             ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes) {
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
                 $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
-                // saldo_pendiente ya es positivo (ABS) pero viene filtrado a solo facturas pendientes
                 $saldoFactura = (float) ($row->saldo_pendiente ?? 0);
                 $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
                 $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
