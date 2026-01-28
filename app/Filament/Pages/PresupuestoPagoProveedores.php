@@ -309,44 +309,84 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 SUM(COALESCE(saedmcp.dcmp_deb_ml,0)) as total_debito,
                 SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) as total_credito,
 
-                SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) as saldo_real,
-                ABS(SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0))) as saldo_pendiente
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) as saldo_pendiente
             ')
 
             ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
             ->orderBy('prov.clpv_nom_clpv')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) > 0')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) < 0');
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) <> 0');
 
-        return $query->get()
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes) {
-                $empresaCodigo = $row->empresa;
-                $sucursalCodigo = $row->sucursal;
-                $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
-                // saldo_pendiente ya es positivo (ABS) pero viene filtrado a solo facturas pendientes
-                $saldoFactura = (float) ($row->saldo_pendiente ?? 0);
-                $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
-                $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
+        $rows = $query->get();
+        $resultados = collect();
 
-                return [
-                    'conexion_id' => $conexion,
-                    'conexion_nombre' => $conexionNombre,
-                    'empresa_codigo' => $empresaCodigo,
-                    'empresa_nombre' => $empresasDisponibles[$empresaCodigo] ?? $empresaCodigo,
-                    'sucursal_codigo' => $sucursalCodigo,
-                    'sucursal_nombre' => $sucursalesDisponibles[$sucursalCodigo] ?? $sucursalCodigo,
-                    'proveedor_codigo' => $row->proveedor_codigo,
-                    'proveedor_nombre' => $row->proveedor_nombre ?? ($proveedoresBase[$empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo]['nombre'] ?? $row->proveedor_codigo),
-                    'proveedor_ruc' => $row->proveedor_ruc,
-                    'proveedor_descripcion' => $row->proveedor_descripcion ?? null,
-                    'numero_factura' => $row->numero_factura,
-                    'fecha_emision' => $row->fecha_emision,
-                    'fecha_vencimiento' => $row->fecha_vencimiento,
-                    'saldo' => $saldoPendiente,
-                ];
-            })
-            ->filter(fn(array $row) => (float) ($row['saldo'] ?? 0) > 0)
-            ->all();
+        $rows
+            ->groupBy(fn($row) => $row->empresa . '|' . $row->sucursal . '|' . $row->proveedor_codigo)
+            ->each(function ($items) use (&$resultados, $conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes): void {
+                $facturas = $items
+                    ->filter(fn($row) => (float) ($row->saldo_pendiente ?? 0) > 0)
+                    ->sortBy('fecha_emision')
+                    ->values()
+                    ->map(fn($row) => [
+                        'row' => $row,
+                        'saldo' => (float) ($row->saldo_pendiente ?? 0),
+                    ])
+                    ->all();
+
+                $cruces = $items
+                    ->filter(fn($row) => (float) ($row->saldo_pendiente ?? 0) < 0)
+                    ->sortBy('fecha_emision')
+                    ->values();
+
+                foreach ($cruces as $cruce) {
+                    $saldoAplicar = abs((float) ($cruce->saldo_pendiente ?? 0));
+
+                    for ($i = 0; $i < count($facturas) && $saldoAplicar > 0; $i++) {
+                        $saldoFactura = (float) ($facturas[$i]['saldo'] ?? 0);
+
+                        if ($saldoFactura <= 0) {
+                            continue;
+                        }
+
+                        $aplicado = min($saldoFactura, $saldoAplicar);
+                        $facturas[$i]['saldo'] = $saldoFactura - $aplicado;
+                        $saldoAplicar -= $aplicado;
+                    }
+                }
+
+                foreach ($facturas as $facturaData) {
+                    $row = $facturaData['row'];
+                    $empresaCodigo = $row->empresa;
+                    $sucursalCodigo = $row->sucursal;
+                    $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+
+                    $saldoFactura = (float) ($facturaData['saldo'] ?? 0);
+                    $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
+                    $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
+
+                    if ($saldoPendiente <= 0) {
+                        continue;
+                    }
+
+                    $resultados->push([
+                        'conexion_id' => $conexion,
+                        'conexion_nombre' => $conexionNombre,
+                        'empresa_codigo' => $empresaCodigo,
+                        'empresa_nombre' => $empresasDisponibles[$empresaCodigo] ?? $empresaCodigo,
+                        'sucursal_codigo' => $sucursalCodigo,
+                        'sucursal_nombre' => $sucursalesDisponibles[$sucursalCodigo] ?? $sucursalCodigo,
+                        'proveedor_codigo' => $row->proveedor_codigo,
+                        'proveedor_nombre' => $row->proveedor_nombre ?? ($proveedoresBase[$empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo]['nombre'] ?? $row->proveedor_codigo),
+                        'proveedor_ruc' => $row->proveedor_ruc,
+                        'proveedor_descripcion' => $row->proveedor_descripcion ?? null,
+                        'numero_factura' => $row->numero_factura,
+                        'fecha_emision' => $row->fecha_emision,
+                        'fecha_vencimiento' => $row->fecha_vencimiento,
+                        'saldo' => $saldoPendiente,
+                    ]);
+                }
+            });
+
+        return $resultados->all();
     }
 
     protected function groupByProveedor($registros): array
