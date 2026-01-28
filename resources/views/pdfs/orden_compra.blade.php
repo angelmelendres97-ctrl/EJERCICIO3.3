@@ -332,9 +332,14 @@
                         }
 
                         $codigoMostrar = $auxiliarData['codigo'] ?? $detalle->codigo_producto;
-                        $descripcionMostrar = $auxiliarData['descripcion'] ?? $detalle->producto;
-                        if (!empty($auxiliarData['descripcion_auxiliar'])) {
-                            $descripcionMostrar = $auxiliarData['descripcion_auxiliar'];
+                        $descripcionBase = $auxiliarData['descripcion'] ?? $detalle->producto;
+                        $nombreProducto = $auxiliarData['descripcion_auxiliar']
+                            ?? ($productoNombres[$detalle->codigo_producto] ?? null);
+
+                        if ($nombreProducto && $descripcionBase) {
+                            $descripcionMostrar = trim($nombreProducto . ' - ' . $descripcionBase);
+                        } else {
+                            $descripcionMostrar = $nombreProducto ?: $descripcionBase;
                         }
                     @endphp
                     <tr>

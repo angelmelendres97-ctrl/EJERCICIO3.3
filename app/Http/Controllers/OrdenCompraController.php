@@ -25,6 +25,34 @@ class OrdenCompraController extends Controller
         // It is a good practice to load all necessary relationships to avoid N+1 problems in the view.
         $ordenCompra->load('detalles', 'empresa', 'usuario');
 
+        $productoNombres = [];
+        $connectionName = OrdenCompraResource::getExternalConnectionName((int) $ordenCompra->id_empresa);
+        $empresaCodigo = $ordenCompra->amdg_id_empresa;
+        $sucursalCodigo = $ordenCompra->amdg_id_sucursal;
+
+        if ($connectionName && $empresaCodigo && $sucursalCodigo) {
+            $codigosProducto = $ordenCompra->detalles
+                ->pluck('codigo_producto')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if (!empty($codigosProducto)) {
+                try {
+                    $productoNombres = DB::connection($connectionName)
+                        ->table('saeprod')
+                        ->where('prod_cod_empr', $empresaCodigo)
+                        ->where('prod_cod_sucu', $sucursalCodigo)
+                        ->whereIn('prod_cod_prod', $codigosProducto)
+                        ->pluck('prod_nom_prod', 'prod_cod_prod')
+                        ->toArray();
+                } catch (\Exception $e) {
+                    $productoNombres = [];
+                }
+            }
+        }
+
         $nombreEmpresaTitulo = $ordenCompra->empresa->nombre_empresa ?? 'Nombre de Empresa no disponible';
         if ($ordenCompra->presupuesto === 'PB') {
             $nombreEmpresaTitulo = $ordenCompra->empresa->nombre_pb ?: $nombreEmpresaTitulo;
@@ -50,6 +78,7 @@ class OrdenCompraController extends Controller
         $pdf = Pdf::loadView('pdfs.orden_compra', [
             'ordenCompra' => $ordenCompra,
             'nombreEmpresaTitulo' => $nombreEmpresaTitulo,
+            'productoNombres' => $productoNombres,
         ]);
 
         // Returns the PDF as a download.
