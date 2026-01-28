@@ -1243,41 +1243,6 @@ class SolicitudPagoResource extends Resource
                     ->label('Creado por')
                     ->sortable()
                     ->searchable(),
-
-                TextColumn::make('created_at')
-                    ->label('Creado')
-                    ->dateTime('Y-m-d H:i')
-                    ->sortable(),                // VISIBLES POR DEFECTO
-                /* TextColumn::make('fecha')
-                    ->date()
-                    ->label('Fecha')
-                    ->sortable(), */
-
-                TextColumn::make('tipo_solicitud')
-                    ->label('Tipo')
-                    ->toggleable(isToggledHiddenByDefault: true)
-                    ->sortable(),
-
-                TextColumn::make('monto_estimado')
-                    ->money('USD')
-                    ->label('Total')
-                    ->sortable(),
-
-
-                TextColumn::make('monto_aprobado')
-                    ->money('USD')
-                    ->label('Abono aprobado')
-                    ->sortable(),
-                TextColumn::make('monto_utilizado')
-                    ->money('USD')
-                    ->label('Abono utilizado')
-                    ->sortable(),
-
-
-                TextColumn::make('motivo')
-                    ->label('Motivo')
-                    ->limit(40),
-
                 TextColumn::make('estado')
                     ->badge()
                     ->formatStateUsing(function (string $state): string {
@@ -1300,6 +1265,41 @@ class SolicitudPagoResource extends Resource
                     })
                     ->label('Estado')
                     ->sortable(),
+                TextColumn::make('created_at')
+                    ->label('Creado')
+                    ->dateTime('Y-m-d H:i')
+                    ->sortable(),                // VISIBLES POR DEFECTO
+                /* TextColumn::make('fecha')
+                    ->date()
+                    ->label('Fecha')
+                    ->sortable(), */
+                TextColumn::make('motivo')
+                    ->label('Motivo')
+                    ->limit(40),
+                TextColumn::make('tipo_solicitud')
+                    ->label('Tipo')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->sortable(),
+
+                TextColumn::make('monto_estimado')
+                    ->money('USD')
+                    ->label('Total')
+                    ->sortable(),
+
+
+                TextColumn::make('monto_aprobado')
+                    ->money('USD')
+                    ->label('Abono aprobado')
+                    ->sortable(),
+                TextColumn::make('monto_utilizado')
+                    ->money('USD')
+                    ->label('Abono utilizado')
+                    ->sortable(),
+
+
+
+
+
 
 
             ])
@@ -1526,7 +1526,8 @@ class SolicitudPagoResource extends Resource
                             'BORRADOR',
                             'PENDIENTE',
                         ], true))
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportPdf($record)),
+                        ->url(fn(SolicitudPago $record) => route('solicitud-pago.pdf', $record))
+                        ->openUrlInNewTab(),
                     Tables\Actions\Action::make('descargarPdfDetallado')
                         ->label('Solicitud PDF Detallado')
                         ->icon('heroicon-o-document-magnifying-glass')
@@ -1538,31 +1539,8 @@ class SolicitudPagoResource extends Resource
                             'BORRADOR',
                             'PENDIENTE',
                         ], true))
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedPdf($record)),
-
-                   /*  Tables\Actions\Action::make('descargarExcel')
-                        ->label('Solicitud EXCEL')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
-                            'APROBADA',
-                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
-                            'BORRADOR',
-                            'PENDIENTE',
-                        ], true))
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportExcel($record)),
-                    Tables\Actions\Action::make('descargarExcelDetallado')
-                        ->label('Solicitud EXCEL Detallado')
-                        ->icon('heroicon-o-table-cells')
-                        ->color('success')
-                        ->visible(fn(SolicitudPago $record) => in_array(strtoupper($record->estado ?? ''), [
-                            'APROBADA',
-                            strtoupper(SolicitudPago::ESTADO_SOLICITUD_COMPLETADA),
-                            'BORRADOR',
-                            'PENDIENTE',
-                        ], true))
-                        ->action(fn(SolicitudPago $record) => app(SolicitudPagoReportService::class)->exportDetailedExcel($record)), */
-
+                        ->url(fn(SolicitudPago $record) => route('solicitud-pago.detallado.pdf', $record))
+                        ->openUrlInNewTab(),
                     Tables\Actions\Action::make('gestionar')
                         ->label('Asignar abonos facturas')
                         ->icon('heroicon-o-pencil-square')
