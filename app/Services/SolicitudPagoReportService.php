@@ -155,16 +155,16 @@ class SolicitudPagoReportService
                                 'Conexion' => $empresa['conexion_nombre'] ?? '',
                                 'Empresa' => $empresa['empresa_nombre'] ?? $empresa['empresa_codigo'],
                                 'Sucursal' => $sucursal['sucursal_nombre'] ?? $sucursal['sucursal_codigo'],
-                            'Proveedor' => $proveedor['nombre'] ?? '',
-                            'RUC' => $proveedor['ruc'] ?? '',
-                            'Descripcion' => $proveedor['descripcion'] ?? '',
-                            'Area' => $proveedor['area'] ?? '',
-                            'Factura' => $factura['numero'] ?? '',
-                            'Fecha Emision' => $factura['fecha_emision'] ?? '',
-                            'Fecha Vencimiento' => $factura['fecha_vencimiento'] ?? '',
-                            'Valor' => number_format((float) ($factura['valor'] ?? 0), 2, '.', ''),
-                            'Abono' => number_format((float) ($factura['abono'] ?? 0), 2, '.', ''),
-                            'Saldo pendiente' => number_format((float) ($factura['saldo'] ?? 0), 2, '.', ''),
+                                'Proveedor' => $proveedor['nombre'] ?? '',
+                                'RUC' => $proveedor['ruc'] ?? '',
+                                'Descripcion' => $proveedor['descripcion'] ?? '',
+                                'Area' => $proveedor['area'] ?? '',
+                                'Factura' => $factura['numero'] ?? '',
+                                'Fecha Emision' => $factura['fecha_emision'] ?? '',
+                                'Fecha Vencimiento' => $factura['fecha_vencimiento'] ?? '',
+                                'Valor' => number_format((float) ($factura['valor'] ?? 0), 2, '.', ''),
+                                'Abono' => number_format((float) ($factura['abono'] ?? 0), 2, '.', ''),
+                                'Saldo pendiente' => number_format((float) ($factura['saldo'] ?? 0), 2, '.', ''),
                             ];
                         });
                     });
@@ -199,6 +199,31 @@ class SolicitudPagoReportService
             fclose($handle);
         }, $this->buildDetailedExcelFilename($solicitud));
     }
+
+    public function streamDetailedPdf(SolicitudPago $solicitud): Response
+    {
+        $solicitud->loadMissing('detalles');
+
+        $facturas = $this->buildFacturaRowsFromSolicitud($solicitud);
+        [$facturasNormales, $compras] = $this->splitFacturas($facturas);
+
+        $proveedores = $this->getProvidersWithMetadata($facturasNormales);
+        $empresas = $this->buildEmpresasParaReportes($proveedores);
+        $totales = $this->buildTotalesDesdeFacturas(array_merge($facturasNormales, $compras));
+        $comprasReport = $this->buildComprasReportRows($compras);
+        $descripcion = $this->buildDescripcionReporte($solicitud);
+
+        return Pdf::loadView('pdfs.solicitud-pago-facturas-detallado', [
+            'empresas' => $empresas,
+            'totales' => $totales,
+            'usuario' => Auth::user()?->name,
+            'descripcionReporte' => $descripcion,
+            'compras' => $comprasReport,
+        ])
+            ->setPaper('a4', 'landscape')
+            ->stream($this->buildDetailedPdfFilename($solicitud), ['Attachment' => false]); // ✅ inline
+    }
+
 
     protected function buildFacturaRowsFromSolicitud(SolicitudPago $solicitud): array
     {

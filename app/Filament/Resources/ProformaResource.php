@@ -19,6 +19,7 @@ use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Placeholder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Filament\Actions\StaticAction;
 
 class ProformaResource extends Resource
 {
@@ -205,37 +206,71 @@ class ProformaResource extends Resource
                             ->schema([
                                 Grid::make(12)
                                     ->schema([
+                                        Forms\Components\Checkbox::make('es_manual')
+                                            ->label('Ingreso manual')
+                                            ->dehydrated(false)
+                                            ->live()
+                                            ->columnSpanFull() // ✅ arriba ocupando toda la fila
+                                            ->afterStateHydrated(function (Forms\Components\Checkbox $component, Get $get): void {
+                                                $isManual = empty($get('id_bodega')) && !empty($get('codigo_producto')) && !empty($get('producto'));
+                                                $component->state($isManual);
+                                            })
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state): void {
+                                                // lo dejamos para el punto 2
+                                            })
+                                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state): void {
+
+                                                if ($state) {
+                                                    // ✅ “quemado” para cumplir NOT NULL
+                                                    $set('id_bodega', 1); // <- AJUSTA si tu bodega manual no es 1
+                                                }
+
+                                                $set('codigo_producto', null);
+                                                $set('producto', null);
+                                                $set('costo', 0);
+                                                $set('impuesto', 0);
+
+                                                self::updateTotals($get, $set);
+                                            }),
+
+                                        // ✅ BODEGA cuando es MANUAL (fija)
+                                        Forms\Components\Select::make('id_bodega')
+                                            ->label('Bodega')
+                                            ->options([1 => 'INGRESO MANUAL'])
+                                            ->disabled()
+                                            ->dehydrated(true) // ✅ se guarda en BD
+                                            ->visible(fn(Get $get) => (bool) $get('es_manual'))
+                                            ->required()
+                                            ->columnSpan(3),
+
+                                        // ✅ BODEGA normal cuando NO es manual
                                         Forms\Components\Select::make('id_bodega')
                                             ->label('Bodega')
                                             ->options(function (Get $get) {
                                                 $empresaId = $get('../../id_empresa');
                                                 $amdg_id_empresa = $get('../../amdg_id_empresa');
                                                 $amdg_id_sucursal = $get('../../amdg_id_sucursal');
-                                                if (!$empresaId || !$amdg_id_empresa)
-                                                    return [];
-                                                $connectionName = self::getExternalConnectionName($empresaId);
-                                                if (!$connectionName)
-                                                    return [];
 
-                                                try {
-                                                    return DB::connection($connectionName)
-                                                        ->table('saebode')
-                                                        ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
-                                                        ->where('subo_cod_empr', $amdg_id_empresa)
-                                                        ->where('bode_cod_empr', $amdg_id_empresa)
-                                                        ->where('subo_cod_sucu', $amdg_id_sucursal)
-                                                        ->pluck('bode_nom_bode', 'bode_cod_bode')
-                                                        ->all();
-                                                } catch (\Exception $e) {
-                                                    return [];
-                                                }
+                                                if (!$empresaId || !$amdg_id_empresa) return [];
+                                                $connectionName = self::getExternalConnectionName($empresaId);
+                                                if (!$connectionName) return [];
+
+                                                return DB::connection($connectionName)
+                                                    ->table('saebode')
+                                                    ->join('saesubo', 'subo_cod_bode', '=', 'bode_cod_bode')
+                                                    ->where('subo_cod_empr', $amdg_id_empresa)
+                                                    ->where('bode_cod_empr', $amdg_id_empresa)
+                                                    ->where('subo_cod_sucu', $amdg_id_sucursal)
+                                                    ->pluck('bode_nom_bode', 'bode_cod_bode')
+                                                    ->all();
                                             })
-                                            ->required()
+                                            ->required(fn(Get $get) => !(bool) $get('es_manual'))
                                             ->live()
+                                            ->visible(fn(Get $get) => !(bool) $get('es_manual'))
                                             ->columnSpan(3),
 
-                                        Forms\Components\Select::make('codigo_producto')
-                                            ->label('Producto')
+                                        Forms\Components\Select::make('producto_inventario')
+                                            ->label('Producto inventario')
                                             ->options(function (Get $get) {
                                                 $empresaId = $get('../../id_empresa');
                                                 $amdg_id_empresa = $get('../../amdg_id_empresa');
@@ -268,12 +303,17 @@ class ProformaResource extends Resource
                                             })
                                             ->searchable()
                                             ->live()
-                                            ->required()
+                                            ->required(fn(Get $get) => !(bool) $get('es_manual'))
+                                            ->visible(fn(Get $get) => !(bool) $get('es_manual'))
+                                            ->dehydrated(false)
                                             ->columnSpan(4)
                                             ->afterStateUpdated(function (Set $set, Get $get, ?string $state) {
                                                 if (!$state) {
                                                     $set('producto', null);
+                                                    $set('codigo_producto', null);
                                                     $set('costo', 0);
+                                                    $set('impuesto', 0);
+                                                    self::updateTotals($get, $set);
                                                     return;
                                                 }
                                                 // Fetch product details
@@ -297,18 +337,35 @@ class ProformaResource extends Resource
                                                     ->first();
 
                                                 if ($data) {
+                                                    $set('codigo_producto', $state);
                                                     $set('costo', number_format($data->prbo_uco_prod, 6, '.', ''));
                                                     $set('impuesto', 0); // Implicit 0 since requested to hide
                                                     $set('producto', $data->prod_nom_prod);
+                                                    self::updateTotals($get, $set);
                                                 }
                                             }),
 
-                                        Forms\Components\Hidden::make('producto'),
+                                        Forms\Components\TextInput::make('codigo_producto')
+                                            ->label('Código')
+                                            ->required(fn(Get $get) => (bool) $get('es_manual'))
+                                            ->readOnly(fn(Get $get) => !(bool) $get('es_manual'))
+                                            ->live(debounce: 300)
+                                            ->afterStateUpdated(function (Set $set, Get $get) {
+                                                self::updateTotals($get, $set);
+                                            })
+                                            ->columnSpan(2),
+
+                                        Forms\Components\TextInput::make('producto')
+                                            ->label('Descripción')
+                                            ->required(fn(Get $get) => (bool) $get('es_manual'))
+                                            ->readOnly(fn(Get $get) => !(bool) $get('es_manual'))
+                                            ->live(debounce: 300)
+                                            ->columnSpan(4),
 
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->default(1)
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 300)
                                             ->required()
                                             ->columnSpan(1)
                                             ->afterStateUpdated(function (Set $set, Get $get) {
@@ -321,7 +378,7 @@ class ProformaResource extends Resource
                                             ->label('Costo Ref.')
                                             ->numeric()
                                             ->prefix('$')
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 300)
                                             ->columnSpan(2)
                                             ->afterStateUpdated(function (Set $set, Get $get) {
                                                 self::updateTotals($get, $set);
@@ -368,7 +425,9 @@ class ProformaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('id')
+                    ->label('Núm')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('amdg_id_empresa')
                     ->label('Empresa')
                     ->formatStateUsing(function ($state, $record) {
@@ -423,6 +482,7 @@ class ProformaResource extends Resource
                         'Pendiente' => 'gray',
                         'Aprobado' => 'success',
                         'Rechazado' => 'danger',
+                        'Anulada' => 'warning',
                         default => 'gray',
                     })
                     ->searchable(),
@@ -431,14 +491,36 @@ class ProformaResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()
-                    ->label('Ver Detalles'),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\Action::make('ver_detalles')
+                    ->label('Ver Detalles')
+                    ->icon('heroicon-o-eye')
+                    ->modalHeading('Detalle de proforma')
+                    ->modalContent(fn(Proforma $record) => view('filament.resources.proforma-resource.widgets.detalle-proforma-modal', [
+                        'record' => $record->loadMissing('detalles'),
+                    ]))
+                    ->modalSubmitAction(false)
+                    ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar'))
+                    ->modalWidth('7xl'),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn(Proforma $record) => $record->estado === 'Pendiente'),
+                Tables\Actions\Action::make('anular')
+                    ->label('Anular')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn(Proforma $record) => $record->estado === 'Pendiente')
+                    ->action(function (Proforma $record) {
+                        $record->update(['estado' => 'Anulada']);
+                    }),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn() => self::userIsAdmin())
+                    ->authorize(fn() => self::userIsAdmin()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn() => self::userIsAdmin())
+                        ->authorize(fn() => self::userIsAdmin()),
                 ]),
             ]);
     }
@@ -457,6 +539,23 @@ class ProformaResource extends Resource
             'create' => Pages\CreateProforma::route('/create'),
             'edit' => Pages\EditProforma::route('/{record}/edit'),
         ];
+    }
+
+    public static function userIsAdmin(): bool
+    {
+        $user = auth()->user();
+
+        return $user?->hasRole('ADMINISTRADOR') ?? false;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return $record->estado === 'Pendiente';
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return self::userIsAdmin();
     }
 
     public static function updateTotals(Get $get, Set $set): void
@@ -511,9 +610,9 @@ class ProformaResource extends Resource
 
         // 4. Set Globals
         // If item context (detalles.uuid.field), '../../' is 'detalles' array.
-        // 'subtotal' is a sibling of 'detalles'. 
+        // 'subtotal' is a sibling of 'detalles'.
         // So we need to go up from 'detalles' array -> Parent.
-        // In Filament state paths: 
+        // In Filament state paths:
         // Field: detalles.uuid.field
         // ../ : detalles.uuid
         // ../../ : detalles (value)

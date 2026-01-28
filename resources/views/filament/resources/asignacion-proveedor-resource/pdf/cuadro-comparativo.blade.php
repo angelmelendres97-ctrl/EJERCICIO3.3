@@ -103,7 +103,7 @@
 
     <!-- Main Header -->
     @php
-        // 3 Left Cols (Nro Item, Cant Aprobada, Producto) 
+        // 3 Left Cols (Nro Item, Cant Aprobada, Producto)
         // + (Providers * 3 Cols Each: Cant, Costo, Total)
         $totalCols = 3 + (count($providers) * 3);
     @endphp
