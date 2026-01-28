@@ -294,22 +294,26 @@ class ResumenPedidosResource extends Resource
                                         ->modalSubmitAction(false)
                                         ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
                                 ])->columnSpan(2),
-                                Forms\Components\Checkbox::make('checkbox_oc')
-                                    ->label('Marcar')
-                                    ->live()
-                                    ->afterStateUpdated(function (Set $set, Get $get): void {
-                                        $ordenes = $get('../../') ?? [];
-                                        if (! is_array($ordenes)) {
-                                            return;
-                                        }
+                               Forms\Components\Checkbox::make('checkbox_oc')
+                                ->label('Marcar')
+                                ->live()
+                                ->afterStateUpdated(function (Set $set, Get $get): void {
 
-                                        $allChecked = collect($ordenes)
-                                            ->filter(fn($orden) => array_key_exists('checkbox_oc', $orden))
-                                            ->every(fn($orden) => (bool) ($orden['checkbox_oc'] ?? false));
+                                    // OJO: aquí debemos leer TODO el repeater, no el item actual
+                                    $ordenes = $get('../../../../ordenes_compra') ?? [];
 
-                                        $set('../../../seleccionar_todas_ordenes', $allChecked);
-                                    })
-                                    ->columnSpan(1),
+                                    if (! is_array($ordenes)) {
+                                        return;
+                                    }
+
+                                    $allChecked = collect($ordenes)
+                                        ->filter(fn ($orden) => is_array($orden)) // evita strings
+                                        ->every(fn ($orden) => (bool) ($orden['checkbox_oc'] ?? false));
+
+                                    // "seleccionar_todas_ordenes" está fuera del repeater
+                                    $set('../../../../seleccionar_todas_ordenes', $allChecked);
+                                })
+                                ->columnSpan(1),
 
                             ])
                             ->columns(16)

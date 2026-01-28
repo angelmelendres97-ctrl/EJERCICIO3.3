@@ -332,16 +332,34 @@
                         }
 
                         $codigoMostrar = $auxiliarData['codigo'] ?? $detalle->codigo_producto;
-                        $descripcionBase = $auxiliarData['descripcion'] ?? $detalle->producto;
-                        $nombreProducto = $auxiliarData['descripcion_auxiliar']
-                            ?? ($productoNombres[$detalle->codigo_producto] ?? null);
+
+                        // Base (lo que venga del pedido / producto / json)
+                        $descripcionBase = trim($auxiliarData['descripcion'] ?? ($detalle->producto ?? ''));
+
+                        // Nombre "bonito" (catálogo)
+                        $nombreProducto = trim(
+                            $auxiliarData['descripcion_auxiliar'] ??
+                                ($productoNombres[$detalle->codigo_producto] ?? ''),
+                        );
+
+                        // Normaliza texto para comparar (mayúsculas y espacios)
+                        $norm = fn($s) => preg_replace('/\s+/', ' ', mb_strtoupper(trim((string) $s), 'UTF-8'));
+
+                        $baseNorm = $norm($descripcionBase);
+                        $nombreNorm = $norm($nombreProducto);
 
                         if ($nombreProducto && $descripcionBase) {
-                            $descripcionMostrar = trim($nombreProducto . ' - ' . $descripcionBase);
+                            // Si la base YA contiene el nombre (en cualquier parte), no lo repitas
+                            if ($nombreNorm !== '' && str_contains($baseNorm, $nombreNorm)) {
+                                $descripcionMostrar = $descripcionBase;
+                            } else {
+                                $descripcionMostrar = $nombreProducto . ' - ' . $descripcionBase;
+                            }
                         } else {
                             $descripcionMostrar = $nombreProducto ?: $descripcionBase;
                         }
                     @endphp
+
                     <tr>
                         <td class="center">{{ $key + 1 }}</td>
                         <td>{{ $codigoMostrar }}</td>
