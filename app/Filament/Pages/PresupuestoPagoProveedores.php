@@ -276,6 +276,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
         }
 
         $abonosPendientes = SolicitudPagoResource::getAbonosPendientesSolicitudes($conexion, $empresas, $sucursales);
+        $abonosPendientesPorFactura = $this->groupAbonosPendientesPorFactura($abonosPendientes);
         $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
         $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
         $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
@@ -288,7 +289,6 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->table('saedmcp')
             ->join('saeclpv as prov', function ($join) {
                 $join->on('prov.clpv_cod_empr', '=', 'saedmcp.dmcp_cod_empr')
-                    ->on('prov.clpv_cod_sucu', '=', 'saedmcp.dmcp_cod_sucu')
                     ->on('prov.clpv_cod_clpv', '=', 'saedmcp.clpv_cod_clpv');
             })
             ->whereIn('saedmcp.dmcp_cod_empr', $empresas)
@@ -296,7 +296,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             ->where('saedmcp.dmcp_est_dcmp', '<>', 'AN')
             ->selectRaw('
                 saedmcp.dmcp_cod_empr   as empresa,
-                saedmcp.dmcp_cod_sucu   as sucursal,
+                MIN(saedmcp.dmcp_cod_sucu) as sucursal,
                 saedmcp.clpv_cod_clpv   as proveedor_codigo,
                 prov.clpv_nom_clpv      as proveedor_nombre,
                 prov.clpv_ruc_clpv      as proveedor_ruc,
@@ -309,23 +309,21 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                 SUM(COALESCE(saedmcp.dcmp_deb_ml,0)) as total_debito,
                 SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) as total_credito,
 
-                SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) as saldo_real,
-                ABS(SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0))) as saldo_pendiente
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) as saldo_real
             ')
 
-            ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
+            ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
             ->orderBy('prov.clpv_nom_clpv')
             ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) > 0')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) < 0');
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) <> 0');
 
         return $query->get()
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes) {
+            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientesPorFactura) {
                 $empresaCodigo = $row->empresa;
                 $sucursalCodigo = $row->sucursal;
-                $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
-                // saldo_pendiente ya es positivo (ABS) pero viene filtrado a solo facturas pendientes
-                $saldoFactura = (float) ($row->saldo_pendiente ?? 0);
-                $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
+                $facturaKey = $empresaCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+                $saldoFactura = (float) ($row->saldo_real ?? 0);
+                $abonoPendiente = (float) ($abonosPendientesPorFactura[$facturaKey] ?? 0);
                 $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
 
                 return [
@@ -347,6 +345,28 @@ class PresupuestoPagoProveedores extends Page implements HasForms
             })
             ->filter(fn(array $row) => (float) ($row['saldo'] ?? 0) > 0)
             ->all();
+    }
+
+    /**
+     * @param array<string, float|int|string> $abonosPendientes
+     * @return array<string, float>
+     */
+    protected function groupAbonosPendientesPorFactura(array $abonosPendientes): array
+    {
+        $agrupados = [];
+
+        foreach ($abonosPendientes as $key => $monto) {
+            [$empresa, $sucursal, $proveedor, $factura] = array_pad(explode('|', (string) $key, 4), 4, null);
+
+            if (! $empresa || ! $proveedor || ! $factura) {
+                continue;
+            }
+
+            $facturaKey = $empresa . '|' . $proveedor . '|' . $factura;
+            $agrupados[$facturaKey] = ($agrupados[$facturaKey] ?? 0) + (float) $monto;
+        }
+
+        return $agrupados;
     }
 
     protected function groupByProveedor($registros): array
