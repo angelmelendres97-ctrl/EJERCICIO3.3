@@ -254,6 +254,22 @@ class ResumenPedidosResource extends Resource
                             ->default(true)
                             ->helperText('Si está activo, solo se listarán órdenes creadas por el usuario actual.')
                             ->live(),
+                        Forms\Components\Checkbox::make('seleccionar_todas_ordenes')
+                            ->label('Seleccionar todas las órdenes visibles')
+                            ->helperText('Marca o desmarca todas las órdenes filtradas en pantalla.')
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, Get $get, ?bool $state): void {
+                                $ordenes = $get('ordenes_compra') ?? [];
+                                if (! is_array($ordenes)) {
+                                    return;
+                                }
+
+                                foreach ($ordenes as $index => $orden) {
+                                    $ordenes[$index]['checkbox_oc'] = (bool) $state;
+                                }
+
+                                $set('ordenes_compra', $ordenes);
+                            }),
                         Forms\Components\Repeater::make('ordenes_compra')
                             ->schema([
                                 Forms\Components\TextInput::make('id_orden_compra')->label('Secuencial')->readOnly()->columnSpan(2),
@@ -278,7 +294,22 @@ class ResumenPedidosResource extends Resource
                                         ->modalSubmitAction(false)
                                         ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
                                 ])->columnSpan(2),
-                                Forms\Components\Checkbox::make('checkbox_oc')->label('Marcar')->columnSpan(1),
+                                Forms\Components\Checkbox::make('checkbox_oc')
+                                    ->label('Marcar')
+                                    ->live()
+                                    ->afterStateUpdated(function (Set $set, Get $get): void {
+                                        $ordenes = $get('../../') ?? [];
+                                        if (! is_array($ordenes)) {
+                                            return;
+                                        }
+
+                                        $allChecked = collect($ordenes)
+                                            ->filter(fn($orden) => array_key_exists('checkbox_oc', $orden))
+                                            ->every(fn($orden) => (bool) ($orden['checkbox_oc'] ?? false));
+
+                                        $set('../../../seleccionar_todas_ordenes', $allChecked);
+                                    })
+                                    ->columnSpan(1),
 
                             ])
                             ->columns(16)

@@ -13,7 +13,9 @@ class EditProforma extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->visible(fn() => ProformaResource::userIsAdmin())
+                ->authorize(fn() => ProformaResource::userIsAdmin()),
         ];
     }
 
