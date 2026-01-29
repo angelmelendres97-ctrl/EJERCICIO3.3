@@ -1,6 +1,17 @@
 <div>
     <div class="p-4">
-        <h2 class="text-lg font-bold mb-4">Órdenes de Compra para el Resumen #{{ $record->id }}</h2>
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-bold">Órdenes de Compra para el Resumen #{{ $record->id }}</h2>
+            @if($canEdit && $hasChanges)
+                <button
+                    type="button"
+                    wire:click="saveChanges"
+                    class="inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                >
+                    Guardar cambios y salir
+                </button>
+            @endif
+        </div>
         @if(empty($groupedDetalles))
             <p>No hay órdenes de compra para este resumen.</p>
         @else
@@ -20,6 +31,7 @@
                             <th scope="col" class="px-6 py-3">Proveedor</th>
                             <th scope="col" class="px-6 py-3">Fecha</th>
                             <th scope="col" class="px-6 py-3 text-right">Total</th>
+                            <th scope="col" class="px-6 py-3 text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -34,6 +46,20 @@
                                     {{ $detalle->ordenCompra->fecha_pedido ? $detalle->ordenCompra->fecha_pedido->format('Y-m-d') : 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 text-right">{{ number_format($detalle->ordenCompra->total, 2) }}</td>
+                                <td class="px-6 py-4 text-center">
+                                    @if($canEdit)
+                                        <button
+                                            type="button"
+                                            wire:click="removeDetalle({{ $detalle->id }})"
+                                            onclick="return confirm('¿Desea quitar la orden del resumen?')"
+                                            class="text-sm font-semibold text-danger-600 hover:text-danger-800"
+                                        >
+                                            Quitar
+                                        </button>
+                                    @else
+                                        <span class="text-xs text-gray-400">Sin permiso</span>
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>

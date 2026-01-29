@@ -42,6 +42,13 @@ class ResumenPedidosResource extends Resource
         return $user?->hasRole('ADMINISTRADOR') ?? false;
     }
 
+    protected static function userOwnsRecord(ResumenPedidos $record): bool
+    {
+        $userId = auth()->id();
+
+        return $userId !== null && (int) $record->id_usuario === (int) $userId;
+    }
+
     public static function getExternalConnectionName(int $empresaId): ?string
     {
         $empresa = Empresa::find($empresaId);
@@ -332,6 +339,7 @@ class ResumenPedidosResource extends Resource
                                 $sucursalesSeleccionadas = self::groupOptionsByConnection($get('sucursales') ?? []);
                                 $fecha_desde = $get('fecha_desde');
                                 $fecha_hasta = $get('fecha_hasta');
+                                $tipoPresupuesto = $get('tipo_presupuesto');
 
                                 if (empty($conexiones) || empty($empresasSeleccionadas)) {
                                     return;
@@ -376,6 +384,10 @@ class ResumenPedidosResource extends Resource
 
                                 if (!empty($fecha_desde) && !empty($fecha_hasta)) {
                                     $query->whereBetween('fecha_pedido', [$fecha_desde, $fecha_hasta]);
+                                }
+
+                                if (! empty($tipoPresupuesto)) {
+                                    $query->where('presupuesto', $tipoPresupuesto);
                                 }
 
                                 $soloMias = (bool) $get('solo_mias');
@@ -453,6 +465,7 @@ class ResumenPedidosResource extends Resource
     {
         return $table
             ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
+            ->recordAction('ver_ordenes')
             ->columns([
                 Tables\Columns\TextColumn::make('codigo_secuencial')
                     ->label('N° Resumen')
@@ -597,11 +610,17 @@ class ResumenPedidosResource extends Resource
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->visible(
-                        fn(ResumenPedidos $record) => (auth()->user()->can('Actualizar') || self::userIsAdmin())
-                            && !$record->anulada
-                    )
+                    ->visible(fn(ResumenPedidos $record) => self::userOwnsRecord($record) && !$record->anulada)
                     ->action(function (ResumenPedidos $record) {
+                        if (! self::userOwnsRecord($record)) {
+                            Notification::make()
+                                ->title('No tienes permiso para anular este resumen.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         $record->update(['anulada' => true]);
 
                         Notification::make()
@@ -619,7 +638,7 @@ class ResumenPedidosResource extends Resource
 
     public static function canEdit(Model $record): bool
     {
-        return !$record->anulada;
+        return self::userOwnsRecord($record) && !$record->anulada;
     }
 
     public static function canDelete(Model $record): bool

@@ -13,30 +13,70 @@ use Livewire\Component;
 class ResumenPedidosDetalles extends Component
 {
     public ResumenPedidos $record;
+    public array $removedDetalleIds = [];
+    public bool $hasChanges = false;
+    public bool $canEdit = false;
 
     public function mount(ResumenPedidos $record)
     {
         $this->record = $record;
+        $this->canEdit = auth()->id() !== null
+            && (int) $record->id_usuario === (int) auth()->id()
+            && ! $record->anulada;
     }
 
-    public function deleteDetalle($detalleId)
+    public function removeDetalle($detalleId): void
     {
-        $detalle = DetalleResumenPedidos::find($detalleId);
-        if ($detalle) {
-            $detalle->delete();
+        if (! $this->canEdit) {
             Notification::make()
-                ->title('Detalle eliminado correctamente')
-                ->success()
-                ->send();
-            
-            // Refresh the record data
-            $this->record->refresh();
-        } else {
-            Notification::make()
-                ->title('Error al eliminar el detalle')
+                ->title('No tienes permiso para editar este resumen.')
                 ->danger()
                 ->send();
+            return;
         }
+
+        $detalle = DetalleResumenPedidos::query()
+            ->where('id_resumen_pedidos', $this->record->id)
+            ->find($detalleId);
+
+        if (! $detalle) {
+            Notification::make()
+                ->title('No se encontró la orden seleccionada.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        if (! in_array($detalleId, $this->removedDetalleIds, true)) {
+            $this->removedDetalleIds[] = $detalleId;
+        }
+
+        $this->hasChanges = true;
+        $this->record->refresh();
+    }
+
+    public function saveChanges(): void
+    {
+        if (! $this->canEdit || empty($this->removedDetalleIds)) {
+            return;
+        }
+
+        DetalleResumenPedidos::query()
+            ->where('id_resumen_pedidos', $this->record->id)
+            ->whereIn('id', $this->removedDetalleIds)
+            ->delete();
+
+        $this->removedDetalleIds = [];
+        $this->hasChanges = false;
+        $this->record->refresh();
+
+        Notification::make()
+            ->title('Resumen actualizado correctamente')
+            ->success()
+            ->send();
+
+        $this->dispatch('close-modal', id: 'mountedAction');
+        $this->dispatch('close-modal', id: 'mountedFormComponentAction');
     }
 
     public function render()
@@ -48,10 +88,16 @@ class ResumenPedidosDetalles extends Component
                 ->get()
             : collect();
 
+        if (! empty($this->removedDetalleIds)) {
+            $detalles = $detalles->reject(fn($detalle) => in_array($detalle->id, $this->removedDetalleIds, true));
+        }
+
         $groupedDetalles = $this->buildGroupedDetalles($detalles);
 
         return view('livewire.resumen-pedidos-detalles', [
             'groupedDetalles' => $groupedDetalles,
+            'canEdit' => $this->canEdit,
+            'hasChanges' => $this->hasChanges,
         ]);
     }
 
