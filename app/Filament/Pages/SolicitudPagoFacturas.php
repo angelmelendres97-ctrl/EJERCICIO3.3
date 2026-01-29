@@ -989,6 +989,37 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $this->toggleFacturasSelection($this->getFacturaKeysBySucursal($providerKey, $empresaKey, $sucursalKey));
     }
 
+    public function toggleAllFacturasSelection(): void
+    {
+        $this->toggleFacturasSelection($this->getAllFacturaKeys());
+    }
+
+    public function allFacturasSelected(): bool
+    {
+        $facturaKeys = $this->getAllFacturaKeys();
+
+        if (empty($facturaKeys)) {
+            return false;
+        }
+
+        $selected = collect($this->selectedInvoices);
+
+        return collect($facturaKeys)->every(fn($key) => $selected->contains($key));
+    }
+
+    public function anyFacturasSelected(): bool
+    {
+        $facturaKeys = $this->getAllFacturaKeys();
+        $selected = collect($this->selectedInvoices);
+
+        return collect($facturaKeys)->contains(fn($key) => $selected->contains($key));
+    }
+
+    public function hasSelectableFacturas(): bool
+    {
+        return ! empty($this->getAllFacturaKeys());
+    }
+
     public function empresaHasAllSelected(string $providerKey, string $empresaKey): bool
     {
         $facturaKeys = $this->getFacturaKeysByEmpresa($providerKey, $empresaKey);
@@ -1824,6 +1855,19 @@ $this->dispatch('refresh-resumen');
         }
 
         return $facturaKeys;
+    }
+
+    protected function getAllFacturaKeys(): array
+    {
+        return collect($this->facturasDisponibles)
+            ->flatMap(fn(array $proveedor) => collect($proveedor['empresas'] ?? []))
+            ->flatMap(fn(array $empresa) => collect($empresa['sucursales'] ?? []))
+            ->flatMap(fn(array $sucursal) => collect($sucursal['facturas'] ?? []))
+            ->filter(fn(array $factura) => ! empty($factura['key']) && (float) ($factura['saldo'] ?? 0) > 0)
+            ->pluck('key')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     protected function getFacturaKeysBySucursal(string $providerKey, string $empresaKey, string $sucursalKey): array

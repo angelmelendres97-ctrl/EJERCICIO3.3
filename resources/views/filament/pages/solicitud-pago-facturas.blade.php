@@ -129,9 +129,28 @@
                 <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                     @php
                         $columnsCount = $allowSelection ? 7 : 6;
+                        $allFacturasSelected = $allowSelection ? $this->allFacturasSelected() : false;
+                        $anyFacturasSelected = $allowSelection ? $this->anyFacturasSelected() : false;
+                        $hasSelectableFacturas = $allowSelection ? $this->hasSelectableFacturas() : false;
                     @endphp
 
                     <div class="overflow-x-auto">
+                        @if ($allowSelection)
+                            <div
+                                class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox"
+                                        class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                        wire:click="toggleAllFacturasSelection"
+                                        @checked($allFacturasSelected)
+                                        @disabled((!$hasSelectableFacturas) || ($this->presupuestoDisponible <= 0 && !$anyFacturasSelected)) />
+                                    Seleccionar todas las facturas
+                                </label>
+                                <span class="text-[11px] font-medium text-slate-500">
+                                    Aplica abonos según el monto disponible.
+                                </span>
+                            </div>
+                        @endif
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr>
