@@ -979,6 +979,37 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $this->recalcSelectionAndBudgets();
     }
 
+    public function toggleAllFacturasSelection(): void
+    {
+        $this->toggleFacturasSelection($this->getAllFacturaKeys());
+    }
+
+    public function allFacturasSelected(): bool
+    {
+        $facturaKeys = $this->getAllFacturaKeys();
+
+        if (empty($facturaKeys)) {
+            return false;
+        }
+
+        $selected = collect($this->selectedInvoices);
+
+        return collect($facturaKeys)->every(fn($key) => $selected->contains($key));
+    }
+
+    public function anyFacturasSelected(): bool
+    {
+        $facturaKeys = $this->getAllFacturaKeys();
+
+        if (empty($facturaKeys)) {
+            return false;
+        }
+
+        $selected = collect($this->selectedInvoices);
+
+        return collect($facturaKeys)->contains(fn($key) => $selected->contains($key));
+    }
+
     public function toggleEmpresaSelection(string $providerKey, string $empresaKey): void
     {
         $this->toggleFacturasSelection($this->getFacturaKeysByEmpresa($providerKey, $empresaKey));
@@ -1057,7 +1088,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
                 ->values()
                 ->all();
         }
-$this->dispatch('refresh-resumen');
+        $this->dispatch('refresh-resumen');
         $this->recalcSelectionAndBudgets();
     }
 
@@ -1793,6 +1824,33 @@ $this->dispatch('refresh-resumen');
 
         return collect($proveedor['empresas'] ?? [])
             ->flatMap(fn(array $empresa) => collect($empresa['sucursales'] ?? [])->flatMap(fn(array $sucursal) => collect($sucursal['facturas'] ?? [])))
+            ->values()
+            ->all();
+    }
+
+    protected function isFacturaSeleccionable(array $factura): bool
+    {
+        $key = $factura['key'] ?? null;
+
+        if (! $key) {
+            return false;
+        }
+
+        return (float) ($factura['saldo'] ?? 0) > 0;
+    }
+
+    protected function getAllFacturaKeys(): array
+    {
+        return collect($this->facturasDisponibles)
+            ->flatMap(fn(array $proveedor) => collect($proveedor['empresas'] ?? [])->flatMap(
+                fn(array $empresa) => collect($empresa['sucursales'] ?? [])->flatMap(
+                    fn(array $sucursal) => collect($sucursal['facturas'] ?? [])
+                )
+            ))
+            ->filter(fn(array $factura) => $this->isFacturaSeleccionable($factura))
+            ->pluck('key')
+            ->filter()
+            ->unique()
             ->values()
             ->all();
     }
