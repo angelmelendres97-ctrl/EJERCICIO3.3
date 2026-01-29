@@ -1,6 +1,18 @@
 <div>
     <div class="p-4">
-        <h2 class="text-lg font-bold mb-4">Órdenes de Compra para el Resumen #{{ $record->id }}</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-bold">Órdenes de Compra para el Resumen #{{ $record->id }}</h2>
+            @if ($canManage)
+                <button
+                    type="button"
+                    wire:click="saveChanges"
+                    class="rounded bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-50"
+                    @disabled(! $hasChanges)
+                >
+                    Guardar cambios y salir
+                </button>
+            @endif
+        </div>
         @if(empty($groupedDetalles))
             <p>No hay órdenes de compra para este resumen.</p>
         @else
@@ -20,6 +32,9 @@
                             <th scope="col" class="px-6 py-3">Proveedor</th>
                             <th scope="col" class="px-6 py-3">Fecha</th>
                             <th scope="col" class="px-6 py-3 text-right">Total</th>
+                            @if ($canManage)
+                                <th scope="col" class="px-6 py-3 text-right">Acciones</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody>
@@ -34,6 +49,18 @@
                                     {{ $detalle->ordenCompra->fecha_pedido ? $detalle->ordenCompra->fecha_pedido->format('Y-m-d') : 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 text-right">{{ number_format($detalle->ordenCompra->total, 2) }}</td>
+                                @if ($canManage)
+                                    <td class="px-6 py-4 text-right">
+                                        <button
+                                            type="button"
+                                            wire:click="removeDetalle({{ $detalle->id }})"
+                                            onclick="return confirm('¿Desea quitar la orden del resumen?')"
+                                            class="text-sm font-semibold text-danger-600 hover:underline"
+                                        >
+                                            Quitar
+                                        </button>
+                                    </td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>

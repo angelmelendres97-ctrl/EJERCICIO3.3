@@ -42,6 +42,13 @@ class ResumenPedidosResource extends Resource
         return $user?->hasRole('ADMINISTRADOR') ?? false;
     }
 
+    protected static function userOwnsRecord(ResumenPedidos $record): bool
+    {
+        $userId = auth()->id();
+
+        return $userId !== null && (int) $record->id_usuario === (int) $userId;
+    }
+
     public static function getExternalConnectionName(int $empresaId): ?string
     {
         $empresa = Empresa::find($empresaId);
@@ -453,6 +460,7 @@ class ResumenPedidosResource extends Resource
     {
         return $table
             ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
+            ->recordAction('ver_ordenes')
             ->columns([
                 Tables\Columns\TextColumn::make('codigo_secuencial')
                     ->label('N° Resumen')
@@ -598,8 +606,7 @@ class ResumenPedidosResource extends Resource
                     ->color('danger')
                     ->requiresConfirmation()
                     ->visible(
-                        fn(ResumenPedidos $record) => (auth()->user()->can('Actualizar') || self::userIsAdmin())
-                            && !$record->anulada
+                        fn(ResumenPedidos $record) => self::userOwnsRecord($record) && !$record->anulada
                     )
                     ->action(function (ResumenPedidos $record) {
                         $record->update(['anulada' => true]);
@@ -619,7 +626,11 @@ class ResumenPedidosResource extends Resource
 
     public static function canEdit(Model $record): bool
     {
-        return !$record->anulada;
+        if (! $record instanceof ResumenPedidos) {
+            return false;
+        }
+
+        return ! $record->anulada && self::userOwnsRecord($record);
     }
 
     public static function canDelete(Model $record): bool
