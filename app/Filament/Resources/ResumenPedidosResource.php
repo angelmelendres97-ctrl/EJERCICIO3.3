@@ -610,7 +610,6 @@ class ResumenPedidosResource extends Resource
                             ->send();
                     }),
 
-                //Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn(ResumenPedidos $record) => self::userIsAdmin())
                     ->authorize(fn() => self::userIsAdmin())
