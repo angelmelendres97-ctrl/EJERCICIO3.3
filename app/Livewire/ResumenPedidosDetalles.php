@@ -13,45 +13,93 @@ use Livewire\Component;
 class ResumenPedidosDetalles extends Component
 {
     public ResumenPedidos $record;
+    public array $removedDetalleIds = [];
+    public bool $hasChanges = false;
 
     public function mount(ResumenPedidos $record)
     {
         $this->record = $record;
     }
 
-    public function deleteDetalle($detalleId)
+    public function removeDetalle($detalleId)
     {
-        $detalle = DetalleResumenPedidos::find($detalleId);
-        if ($detalle) {
-            $detalle->delete();
+        if (! $this->canManage()) {
             Notification::make()
-                ->title('Detalle eliminado correctamente')
-                ->success()
-                ->send();
-            
-            // Refresh the record data
-            $this->record->refresh();
-        } else {
-            Notification::make()
-                ->title('Error al eliminar el detalle')
+                ->title('No tienes permisos para modificar este resumen')
                 ->danger()
                 ->send();
+
+            return;
         }
+
+        if (! $detalleId || in_array($detalleId, $this->removedDetalleIds, true)) {
+            return;
+        }
+
+        $this->removedDetalleIds[] = (int) $detalleId;
+        $this->hasChanges = true;
+
+        Notification::make()
+            ->title('Orden marcada para quitar')
+            ->success()
+            ->send();
+    }
+
+    public function saveChanges(): void
+    {
+        if (! $this->canManage()) {
+            Notification::make()
+                ->title('No tienes permisos para guardar cambios')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (empty($this->removedDetalleIds)) {
+            return;
+        }
+
+        DetalleResumenPedidos::query()
+            ->where('id_resumen_pedidos', $this->record->id)
+            ->whereIn('id', $this->removedDetalleIds)
+            ->delete();
+
+        $this->removedDetalleIds = [];
+        $this->hasChanges = false;
+        $this->record->refresh();
+
+        Notification::make()
+            ->title('Resumen actualizado correctamente')
+            ->success()
+            ->send();
+
+        $this->dispatch('close-modal', id: 'mountedAction');
     }
 
     public function render()
     {
-        $detalles = $this->record
+        $detallesQuery = $this->record
             ? $this->record->detalles()
                 ->whereHas('ordenCompra', fn($query) => $query->where('anulada', false))
                 ->with('ordenCompra.empresa')
-                ->get()
-            : collect();
+            : null;
+
+        if (! $detallesQuery) {
+            $detalles = collect();
+        } else {
+            if (! empty($this->removedDetalleIds)) {
+                $detallesQuery->whereNotIn('id', $this->removedDetalleIds);
+            }
+
+            $detalles = $detallesQuery->get();
+        }
 
         $groupedDetalles = $this->buildGroupedDetalles($detalles);
 
         return view('livewire.resumen-pedidos-detalles', [
             'groupedDetalles' => $groupedDetalles,
+            'canManage' => $this->canManage(),
         ]);
     }
 
@@ -135,5 +183,12 @@ class ResumenPedidosDetalles extends Component
             'empresas' => $empresaNombrePorConexion,
             'sucursales' => $sucursalNombrePorConexion,
         ];
+    }
+
+    protected function canManage(): bool
+    {
+        $userId = auth()->id();
+
+        return $userId !== null && (int) $this->record->id_usuario === (int) $userId;
     }
 }
