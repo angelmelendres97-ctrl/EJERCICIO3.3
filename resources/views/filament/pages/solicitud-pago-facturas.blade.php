@@ -131,6 +131,24 @@
                         $columnsCount = $allowSelection ? 7 : 6;
                     @endphp
 
+                    @if ($allowSelection)
+                        @php
+                            $allFacturasSeleccionadas = $this->allFacturasSelected();
+                            $hayFacturasSeleccionadas = $this->anyFacturasSelected();
+                        @endphp
+                        <div
+                            class="flex items-center justify-end gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox"
+                                    class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                    wire:click="toggleAllFacturasSelection"
+                                    @checked($allFacturasSeleccionadas)
+                                    @disabled($this->presupuestoDisponible <= 0 && !$hayFacturasSeleccionadas) />
+                                Seleccionar todas las facturas
+                            </label>
+                        </div>
+                    @endif
+
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
