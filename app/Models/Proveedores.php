@@ -31,9 +31,12 @@ class Proveedores extends Model
         'aplica_retencion_sn',
         'telefono',
         'direcccion',
-        'correo',
+        'anulada',
     ];
 
+    protected $casts = [
+        'anulada' => 'boolean',
+    ];
     public function lineasNegocio()
     {
         return $this->belongsToMany(LineaNegocio::class, 'proveedor_linea_negocios', 'proveedor_id', 'linea_negocio_id');

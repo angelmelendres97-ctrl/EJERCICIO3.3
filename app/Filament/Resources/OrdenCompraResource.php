@@ -400,10 +400,21 @@ class OrdenCompraResource extends Resource
                                 }
 
                                 try {
+
+                                    $anulados = Proveedores::query()
+                                        ->where('id_empresa', $empresaId)
+                                        ->where('anulada', true)
+                                        ->pluck('ruc')
+                                        ->filter()
+                                        ->all();
+
                                     return DB::connection($connectionName)
                                         ->table('saeclpv')
                                         ->where('clpv_cod_empr', $amdg_id_empresa)
                                         ->where('clpv_clopv_clpv', 'PV')
+                                        ->when(!empty($anulados), function ($query) use ($anulados) {
+                                            $query->whereNotIn('clpv_ruc_clpv', $anulados);
+                                        })
                                         ->select([
                                             'clpv_cod_clpv',
                                             DB::raw("clpv_nom_clpv || ' (' || clpv_ruc_clpv || ')' AS proveedor_etiqueta")
@@ -428,6 +439,7 @@ class OrdenCompraResource extends Resource
                                         'id_empresa'        => $get('id_empresa'),
                                         'amdg_id_empresa'   => $get('amdg_id_empresa'),
                                         'amdg_id_sucursal'  => $get('amdg_id_sucursal'),
+
 
                                         // Lo que ProveedorResource suele usar (ojo tu inconsistencia admg/amdg)
                                         'admg_id_empresa'   => $get('amdg_id_empresa'),

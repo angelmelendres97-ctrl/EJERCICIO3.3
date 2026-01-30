@@ -747,6 +747,12 @@ class ProveedorResource extends Resource
                     ->boolean()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('anulada')
+                    ->label('Anulada')
+                    ->getStateUsing(fn($record) => $record->anulada ? 'SI' : 'NO')
+                    ->badge()
+                    ->color(fn($record) => $record->anulada ? 'danger' : 'success')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('lineasNegocio.nombre')
                     ->label('Líneas de negocio')
@@ -761,7 +767,21 @@ class ProveedorResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
                     ->visible(fn() => auth()->user()->can('Actualizar')),
+                Tables\Actions\Action::make('anular')
+                    ->label('Anular')
+                    ->color('danger')
+                    ->icon('heroicon-o-no-symbol')
+                    ->requiresConfirmation()
+                    ->visible(fn() => auth()->user()->can('Actualizar'))
+                    ->disabled(fn(Proveedores $record) => $record->anulada)
+                    ->action(function (Proveedores $record): void {
+                        $record->update(['anulada' => true]);
 
+                        Notification::make()
+                            ->title('Proveedor anulado')
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')
                     ->visible(fn() => auth()->user()->can('Borrar')),
