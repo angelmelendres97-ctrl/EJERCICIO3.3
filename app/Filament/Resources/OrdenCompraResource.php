@@ -424,6 +424,7 @@ class OrdenCompraResource extends Resource
                                     ->tooltip('Crear proveedor (abrir formulario)')
                                     ->icon('heroicon-o-arrow-top-right-on-square')
                                     ->url(fn(Get $get) => ProveedorResource::getUrl('create', [
+                                        'from'             => 'orden-compra',
                                         // Lo que OrdenCompra usa
                                         'id_empresa'        => $get('id_empresa'),
                                         'amdg_id_empresa'   => $get('amdg_id_empresa'),
