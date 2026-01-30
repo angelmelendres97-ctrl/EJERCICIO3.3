@@ -20,6 +20,10 @@ use Filament\Forms\Set;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Http;
+use App\Services\ProveedorUafeService;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
 
 class ProveedorResource extends Resource
 {
@@ -544,6 +548,132 @@ class ProveedorResource extends Resource
                 ])
                 ->columns(3),
 
+            Forms\Components\Section::make('Documentación UAFE')
+                ->headerActions([
+                    Action::make('guardar_uafe')
+                        ->label('Guardar documentos UAFE')
+                        ->icon('heroicon-o-floppy-disk')
+                        ->visible(fn(Get $get, ?Proveedores $record) => $record && ProveedorUafeService::usaValidacionUafe(
+                            (int) $get('id_empresa'),
+                            (int) $get('admg_id_empresa'),
+                        ))
+                        ->action(function (Get $get, Set $set, ?Proveedores $record): void {
+                            if (! $record) {
+                                return;
+                            }
+
+                            ProveedorUafeService::guardarDocumentos(
+                                $record,
+                                $get('uafe_documentos') ?? [],
+                                auth()->id(),
+                            );
+
+                            ProveedorUafeService::sincronizarEstadoExterno(
+                                $record,
+                                $get('empresas_proveedor') ?? [],
+                            );
+
+                            $record->refresh();
+                            $set('uafe_estado', $record->uafe_estado);
+                            $set('uafe_documentos', ProveedorUafeService::construirEstadoDocumentos($record));
+
+                            Notification::make()
+                                ->title('Documentos UAFE actualizados.')
+                                ->success()
+                                ->send();
+                        }),
+                    Action::make('reenviar_uafe')
+                        ->label('Reenviar documentación UAFE')
+                        ->icon('heroicon-o-envelope')
+                        ->visible(fn(Get $get, ?Proveedores $record) => $record && ProveedorUafeService::usaValidacionUafe(
+                            (int) $get('id_empresa'),
+                            (int) $get('admg_id_empresa'),
+                        ))
+                        ->action(function (?Proveedores $record): void {
+                            if (! $record) {
+                                return;
+                            }
+
+                            ProveedorUafeService::notificarDocumentos($record);
+
+                            Notification::make()
+                                ->title('Se envió el correo de documentación UAFE.')
+                                ->success()
+                                ->send();
+                        }),
+                ])
+                ->schema([
+                    Placeholder::make('uafe_info')
+                        ->content(function (Get $get, ?Proveedores $record): string {
+                            if (! $record) {
+                                return 'Guarde el proveedor para gestionar documentación UAFE.';
+                            }
+
+                            $usaUafe = ProveedorUafeService::usaValidacionUafe(
+                                (int) $get('id_empresa'),
+                                (int) $get('admg_id_empresa'),
+                            );
+
+                            return $usaUafe
+                                ? 'Adjunte los documentos requeridos y marque el cumplimiento.'
+                                : 'La empresa seleccionada no tiene control UAFE habilitado.';
+                        })
+                        ->columnSpanFull(),
+                    Forms\Components\TextInput::make('uafe_estado')
+                        ->label('Estado UAFE')
+                        ->disabled()
+                        ->dehydrated(false)
+                        ->visible(fn(Get $get, ?Proveedores $record) => $record && ProveedorUafeService::usaValidacionUafe(
+                            (int) $get('id_empresa'),
+                            (int) $get('admg_id_empresa'),
+                        )),
+                    Repeater::make('uafe_documentos')
+                        ->label('Documentos UAFE')
+                        ->schema([
+                            Forms\Components\Hidden::make('id_archivo_uafe'),
+                            Forms\Components\TextInput::make('titulo')
+                                ->label('Documento')
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->columnSpan(3),
+                            FileUpload::make('archivo')
+                                ->label('Archivo')
+                                ->disk('public')
+                                ->directory('proveedores/uafe')
+                                ->preserveFilenames()
+                                ->downloadable()
+                                ->openable()
+                                ->columnSpan(3),
+                            Forms\Components\Toggle::make('cumple')
+                                ->label('Cumple')
+                                ->inline(false)
+                                ->columnSpan(1),
+                            Forms\Components\TextInput::make('fecha_entrega')
+                                ->label('Fecha entrega')
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->columnSpan(2),
+                            Forms\Components\TextInput::make('fecha_vencimiento')
+                                ->label('Fecha vencimiento')
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->columnSpan(2),
+                        ])
+                        ->columns(8)
+                        ->addable(false)
+                        ->deletable(false)
+                        ->reorderable(false)
+                        ->default(fn(?Proveedores $record) => $record
+                            ? ProveedorUafeService::construirEstadoDocumentos($record)
+                            : [])
+                        ->dehydrated(false)
+                        ->visible(fn(Get $get, ?Proveedores $record) => $record && ProveedorUafeService::usaValidacionUafe(
+                            (int) $get('id_empresa'),
+                            (int) $get('admg_id_empresa'),
+                        )),
+                ])
+                ->columns(2),
+
             Forms\Components\Section::make('Empresas')
                 ->schema([
                     Forms\Components\CheckboxList::make('empresas_proveedor')
@@ -709,6 +839,22 @@ class ProveedorResource extends Resource
                     ->label('Fecha creación')
                     ->dateTime('Y-m-d H:i')
                     ->sortable(),
+                Tables\Columns\TextColumn::make('uafe_estado')
+                    ->label('Estado UAFE')
+                    ->badge()
+                    ->color(fn(?string $state) => match ($state) {
+                        ProveedorUafeService::ESTADO_ACTIVO => 'success',
+                        ProveedorUafeService::ESTADO_INCOMPLETO => 'warning',
+                        ProveedorUafeService::ESTADO_PENDIENTE => 'danger',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(fn(?string $state) => match ($state) {
+                        ProveedorUafeService::ESTADO_ACTIVO => 'Completo',
+                        ProveedorUafeService::ESTADO_INCOMPLETO => 'Incompleto',
+                        ProveedorUafeService::ESTADO_PENDIENTE => 'Pendiente',
+                        default => 'N/A',
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 /*
              * Columnas que NO van al inicio (solo visibles si el usuario las activa)
