@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 // Importamos el Resource solo para obtener la conexión externa (asumiendo que esa lógica está allí)
 use App\Filament\Resources\ProveedorResource;
+use App\Services\ProveedorUafeService;
 
 class ProveedorSyncService
 {
@@ -62,6 +63,22 @@ class ProveedorSyncService
 
         $aplica_retencion_sn = $data['aplica_retencion_sn'] ? 'S' : 'N';
         $fecha_server = date('Y-m-d');
+
+        $usaUafe = ProveedorUafeService::usaValidacionUafe(
+            (int) $data['id_empresa'],
+            (int) $data['admg_id_empresa'],
+        );
+
+        if ($usaUafe && empty($record->uafe_estado)) {
+            $documentosUafe = ProveedorUafeService::obtenerDocumentosUafe((int) $data['admg_id_empresa']);
+            $record->update([
+                'uafe_estado' => $documentosUafe->isEmpty()
+                    ? ProveedorUafeService::ESTADO_ACTIVO
+                    : ProveedorUafeService::ESTADO_PENDIENTE,
+            ]);
+        } elseif (! $usaUafe && $record->uafe_estado !== null) {
+            $record->update(['uafe_estado' => null]);
+        }
 
 
         // 3. Iterar sobre cada empresa seleccionada
@@ -144,7 +161,9 @@ class ProveedorSyncService
                     'clpv_clopv_clpv' => 'PV',
                     'clpv_nom_clpv' => $nombre,
                     'clpv_ruc_clpv' => $identificacion,
-                    'clpv_est_clpv' => 'A',
+                    'clpv_est_clpv' => $usaUafe
+                        ? ProveedorUafeService::mapEstadoExterno($record->uafe_estado)
+                        : 'A',
                     'clpv_fec_has' => $fecha_server,
                     'clpv_fec_reno' => $fecha_server,
                     'clpv_nom_come' => $nombre_comercial,

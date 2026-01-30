@@ -31,7 +31,9 @@ class Proveedores extends Model
         'aplica_retencion_sn',
         'telefono',
         'direcccion',
+        'correo',
         'anulada',
+        'uafe_estado',
     ];
 
     protected $casts = [
