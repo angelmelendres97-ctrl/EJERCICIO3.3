@@ -7,8 +7,8 @@ use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use App\Services\ProveedorSyncService; // <-- Nuevo Import
+use App\Services\UafeService;
 
-use Exception;
 
 class CreateProveedor extends CreateRecord
 {
@@ -25,6 +25,12 @@ class CreateProveedor extends CreateRecord
             $record->lineasNegocio()->attach($lineasNegocioIds);
 
             ProveedorSyncService::sincronizar($record, $this->data);
+
+            if (! empty($this->data['uafe_documentos'])) {
+                UafeService::syncDocumentos($record, $this->data['uafe_documentos'], auth()->id());
+            }
+
+            UafeService::enviarNotificacion($record);
 
             return $record;
         });

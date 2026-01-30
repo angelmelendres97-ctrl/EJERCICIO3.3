@@ -8,6 +8,7 @@ use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use App\Services\ProveedorSyncService; // <-- Nuevo Import
+use App\Services\UafeService;
 
 class EditProveedor extends EditRecord
 {
@@ -32,6 +33,10 @@ class EditProveedor extends EditRecord
             $record->lineasNegocio()->sync($lineasNegocioIds);
 
             ProveedorSyncService::sincronizar($record, $this->data);
+
+            if (! empty($this->data['uafe_documentos'])) {
+                UafeService::syncDocumentos($record, $this->data['uafe_documentos'], auth()->id());
+            }
 
             return $record;
         });

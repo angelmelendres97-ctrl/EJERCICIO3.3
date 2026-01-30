@@ -34,5 +34,9 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'uafe' => [
+        'mail_url' => env('UAFE_MAIL_URL'),
+        'documents_base_path' => env('UAFE_DOCUMENTS_BASE_PATH', storage_path('app/public')),
+    ],
 
 ];
