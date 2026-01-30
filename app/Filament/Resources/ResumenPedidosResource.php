@@ -301,26 +301,26 @@ class ResumenPedidosResource extends Resource
                                         ->modalSubmitAction(false)
                                         ->modalCancelAction(fn(StaticAction $action) => $action->label('Cerrar')),
                                 ])->columnSpan(2),
-                               Forms\Components\Checkbox::make('checkbox_oc')
-                                ->label('Marcar')
-                                ->live()
-                                ->afterStateUpdated(function (Set $set, Get $get): void {
+                                Forms\Components\Checkbox::make('checkbox_oc')
+                                    ->label('Marcar')
+                                    ->live()
+                                    ->afterStateUpdated(function (Set $set, Get $get): void {
 
-                                    // OJO: aquí debemos leer TODO el repeater, no el item actual
-                                    $ordenes = $get('../../../../ordenes_compra') ?? [];
+                                        // OJO: aquí debemos leer TODO el repeater, no el item actual
+                                        $ordenes = $get('../../../../ordenes_compra') ?? [];
 
-                                    if (! is_array($ordenes)) {
-                                        return;
-                                    }
+                                        if (! is_array($ordenes)) {
+                                            return;
+                                        }
 
-                                    $allChecked = collect($ordenes)
-                                        ->filter(fn ($orden) => is_array($orden)) // evita strings
-                                        ->every(fn ($orden) => (bool) ($orden['checkbox_oc'] ?? false));
+                                        $allChecked = collect($ordenes)
+                                            ->filter(fn($orden) => is_array($orden)) // evita strings
+                                            ->every(fn($orden) => (bool) ($orden['checkbox_oc'] ?? false));
 
-                                    // "seleccionar_todas_ordenes" está fuera del repeater
-                                    $set('../../../../seleccionar_todas_ordenes', $allChecked);
-                                })
-                                ->columnSpan(1),
+                                        // "seleccionar_todas_ordenes" está fuera del repeater
+                                        $set('../../../../seleccionar_todas_ordenes', $allChecked);
+                                    })
+                                    ->columnSpan(1),
 
                             ])
                             ->columns(16)
@@ -465,7 +465,7 @@ class ResumenPedidosResource extends Resource
     {
         return $table
             ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
-            ->recordAction('ver_ordenes')
+            ->recordAction(null)
             ->columns([
                 Tables\Columns\TextColumn::make('codigo_secuencial')
                     ->label('N° Resumen')
@@ -575,9 +575,12 @@ class ResumenPedidosResource extends Resource
                     ->label('Fecha Creación')
                     ->dateTime('Y-m-d H:i')
                     ->sortable(),
-                Tables\Columns\IconColumn::make('anulada')
+                Tables\Columns\TextColumn::make('anulada')
                     ->label('Anulada')
-                    ->boolean(),
+                    ->getStateUsing(fn($record) => $record->anulada ? 'SI' : 'NO')
+                    ->badge() // opcional
+                    ->color(fn($state) => $state === 'SI' ? 'danger' : 'success'),
+
             ])
             ->filters([
                 Filter::make('mis_resumenes')

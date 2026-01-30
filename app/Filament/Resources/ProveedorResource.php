@@ -668,106 +668,108 @@ class ProveedorResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->recordAction(null)
+            ->recordUrl(null)
+            ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->columns([
                 Tables\Columns\TextColumn::make('empresa.nombre_empresa')
                     ->label('Empresa')
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('tipo')
-                    ->label('Tipo')
-                    ->sortable(),
-
+                // Identificación en negrita + buscable
                 Tables\Columns\TextColumn::make('ruc')
-                    ->label('identificación')
+                    ->label('Identificación')
+                    ->weight('bold')              // <- negrita
+                    ->searchable(isIndividual: true)
                     ->sortable(),
 
+                // Nombre SIN badge + buscable
                 Tables\Columns\TextColumn::make('nombre')
                     ->label('Nombre')
+                    ->searchable(isIndividual: true)
+                    ->sortable(),
+
+                // Nombre comercial buscable
+                Tables\Columns\TextColumn::make('nombre_comercial')
+                    ->label('Nombre Comercial')
+                    ->searchable(isIndividual: true)
+                    ->sortable(),
+
+                // Grupo CON badge
+                Tables\Columns\TextColumn::make('grupo')
+                    ->label('Grupo')
                     ->badge()
                     ->color('success')
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('nombre_comercial')
-                    ->label('Nombre Comercial')
-                    ->searchable()
+                // Fecha de creación
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Fecha creación')
+                    ->dateTime('Y-m-d H:i')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('grupo')
-                    ->label('Grupo')
-                    ->searchable()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('zona')
-                    ->label('Zona')
-                    ->searchable()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('flujo_caja')
-                    ->label('Flujo de Caja')
-                    ->searchable()
-                    ->sortable(),
-
+                /*
+             * Columnas que NO van al inicio (solo visibles si el usuario las activa)
+             */
                 Tables\Columns\TextColumn::make('tipo_proveedor')
-                    ->label('Tipo Proveedor')
+                    ->label('Tipo proveedor')
                     ->searchable()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('forma_pago')
-                    ->label('Forma de Pago')
-                    ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('destino_pago')
-                    ->label('Destino Pago')
+                    ->label('Destino pago')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('dias_pago')
-                    ->label('Días Pago')
-                    ->searchable()
-                    ->sortable(),
+                    ->label('Días pago')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('pais_pago')
-                    ->label('Pais Pago')
+                    ->label('País pago')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('limite_credito')
-                    ->label('Límite Crédito')
+                    ->label('Límite crédito')
                     ->money('USD')
-                    ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('aplica_retencion_sn')
                     ->label('Retención')
                     ->boolean()
-                    ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('lineasNegocio.nombre')
+                    ->label('Líneas de negocio')
                     ->badge()
-                    ->label('Líneas de Negocio')
                     ->listWithLineBreaks()
                     ->limitList(3)
                     ->expandableLimitedList()
-                    ->color('success'),
+                    ->color('success')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([])
             ->actions([
                 Tables\Actions\EditAction::make()
+                    ->label('Editar')
                     ->visible(fn() => auth()->user()->can('Actualizar')),
+
                 Tables\Actions\DeleteAction::make()
+                    ->label('Eliminar')
                     ->visible(fn() => auth()->user()->can('Borrar')),
-
             ])
-
-            ->bulkActions(
-                [
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn() => auth()->user()->can('Borrar')),
-                ]
-            );
+            ->bulkActions([
+                Tables\Actions\DeleteBulkAction::make()
+                    ->visible(fn() => auth()->user()->can('Borrar')),
+            ]);
     }
 
     public static function getRelations(): array

@@ -1163,10 +1163,12 @@ class OrdenCompraResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
 
-
-                Tables\Columns\IconColumn::make('anulada')
+                Tables\Columns\TextColumn::make('anulada')
                     ->label('Anulada')
-                    ->boolean(),
+                    ->getStateUsing(fn($record) => $record->anulada ? 'SI' : 'NO')
+                    ->badge() // opcional
+                    ->color(fn($state) => $state === 'SI' ? 'danger' : 'success'),
+
             ])
             ->filters([
                 //ademas selecionada por defecto
