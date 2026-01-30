@@ -1,0 +1,124 @@
+/*PARA CREACION DE PESTA?AS*/
+#pestanas {
+    background-color:#EBEBEB;
+    float: top;
+    font-size: 3ex;
+    font-weight: bold;
+}
+
+#pestanas ul{
+    margin-left: -40px;
+}
+
+#pestanas li{
+    list-style-type: none;
+    float: left;
+    text-align: center;
+    margin: 0px 2px -2px -0px;
+    background: #A6C4E1;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    border: 2px #808080;
+    border-bottom: dimgray;
+    padding: 0px 20px 0px 20px;
+}
+
+#pestanas a:link{
+    text-decoration: none;
+    color: white;
+}
+
+#contenidopestanas{
+    clear: both;
+   /*background: #D3D3D3;*/
+    padding: 5px 5px 5px 5px;
+    border-radius: 5px;
+    border-top-left-radius: 0px;
+    border: 2px  #808080;
+    /*height: 90%;*/
+}
+
+.tdTituloFormulario{
+	background-color:#7BCE6B;
+	font-size: 12px;
+	font-weight: bold;
+}
+
+.tdCampoFormulario{
+	font-size: 12px;
+	font-weight: bold;
+}
+
+.twitter-typeahead{
+    width: 100%;
+}
+
+.tt-menu{
+    background: white;
+    border-radius: 4px;
+    border: 1px solid gray;
+    margin-top: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+    text-align: left;
+}
+
+.tt-suggestion{
+    padding: 5px 10px;
+}
+
+.tt-suggestion.tt-cursor{
+    color: white;
+    background: #0097cf;
+}
+
+.form-control{
+    text-transform: uppercase;
+}
+
+
+#miModal{
+    width: 100%;
+    height: 100%;
+}
+
+#modalMateriales{
+    width: 100%;
+    height: 90%;
+}
+
+#modalMaterialesBody{
+    width: 100%;
+    height: 80%;
+}
+
+/*PARA CREACION DE PESTA?AS*/
+#pestana {
+    background-color:#EBEBEB;
+    float: top;
+    font-size: 3ex;
+    font-weight: bold;
+}
+
+#pestana ul{
+    margin-left: -40px;
+}
+
+#pestana li{
+    list-style-type: none;
+    float: left;
+    text-align: center;
+    margin: 0px 2px -2px -0px;
+    background: #b3d895;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    border: 2px #808080;
+    border-bottom: dimgray;
+    padding: 0px 20px 0px 20px;
+}
+
+#pestana a:link{
+    text-decoration: none;
+    color: white;
+}
