@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ProveedorResource\Pages;
 use App\Filament\Resources\ProveedorResource\RelationManagers;
 use App\Models\Proveedores;
+use App\Models\LineaNegocio;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -56,6 +57,66 @@ class ProveedorResource extends Resource
         }
 
         return $connectionName;
+    }
+
+    private static function getEmpresasReplicacionOptions(Get $get): array
+    {
+        $lineasNegocioIds = $get('lineasNegocio');
+
+        if (empty($lineasNegocioIds)) {
+            return [];
+        }
+
+        $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
+            ->where('status_conexion', true)->get();
+
+        $empresasOptions = [];
+
+        foreach ($empresas as $empresa) {
+            $connectionName = self::getExternalConnectionName($empresa->id);
+            if (!$connectionName) {
+                continue;
+            }
+
+            try {
+                $externalEmpresas = DB::connection($connectionName)
+                    ->table('saeempr')
+                    ->get();
+
+                foreach ($externalEmpresas as $data_empresa) {
+                    $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
+                    $optionLabel = $empresa->nombre_empresa . ' - ' . $data_empresa->empr_nom_empr;
+                    $empresasOptions[$optionKey] = $optionLabel;
+                }
+            } catch (\Exception $e) {
+                \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
+                continue;
+            }
+        }
+
+        return $empresasOptions;
+    }
+
+    private static function getEmpresasReplicacionDefault(Get $get): array
+    {
+        $options = self::getEmpresasReplicacionOptions($get);
+
+        if (empty($options)) {
+            return [];
+        }
+
+        $seleccionados = array_keys($options);
+        $empresaId = $get('id_empresa');
+        $admgIdEmpresaCode = $get('admg_id_empresa');
+
+        if ($empresaId && $admgIdEmpresaCode) {
+            $activeKey = $empresaId . '-' . trim((string) $admgIdEmpresaCode);
+            if (array_key_exists($activeKey, $options) && !in_array($activeKey, $seleccionados, true)) {
+                $seleccionados[] = $activeKey;
+            }
+        }
+
+        return $seleccionados;
     }
 
     public static function form(Form $form): Form
@@ -540,6 +601,18 @@ class ProveedorResource extends Resource
                         ->preload()
                         ->searchable()
                         ->live()
+                        ->default(function () {
+                            if (!request()->boolean('from_orden_compra')) {
+                                return null;
+                            }
+
+                            return LineaNegocio::query()->pluck('id')->all();
+                        })
+                        ->afterStateUpdated(function (Set $set, Get $get) {
+                            if (!filled($get('empresas_proveedor'))) {
+                                $set('empresas_proveedor', self::getEmpresasReplicacionDefault($get));
+                            }
+                        })
                         ->required(),
                 ])
                 ->columns(3),
@@ -548,61 +621,17 @@ class ProveedorResource extends Resource
                 ->schema([
                     Forms\Components\CheckboxList::make('empresas_proveedor')
                         ->label('Empresas para replicar')
-                        ->options(function (Get $get) {
-                            $lineasNegocioIds = $get('lineasNegocio');
-                            $amdgIdEmpresaCode = $get('admg_id_empresa');
-                            $ruc = $get('ruc');
-
-                            if (empty($lineasNegocioIds)) {
-                                return [];
-                            }
-
-                            $empresas = Empresa::whereIn('linea_negocio_id', $lineasNegocioIds)
-                                ->where('status_conexion', true)->get();
-
-                            $empresasOptions = [];
-
-                            foreach ($empresas as $empresa) {
-                                $connectionName = self::getExternalConnectionName($empresa->id);
-                                if (!$connectionName) {
-                                    continue;
-                                }
-
-                                try {
-                                    $externalEmpresas = DB::connection($connectionName)
-                                        ->table('saeempr')
-                                        ->get();
-
-                                    foreach ($externalEmpresas as $data_empresa) {
-                                        $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
-                                        $optionLabel = $empresa->nombre_empresa . ' - ' . $data_empresa->empr_nom_empr;
-
-                                        /*
-                                        // ** VERIFICACIÓN DE EXISTENCIA DEL PROVEEDOR **
-                                        $existeProveedor = DB::connection($connectionName)
-                                            ->table('saeclpv')
-                                            ->where('clpv_cod_empr', $amdgIdEmpresaCode)
-                                            ->where('clpv_ruc_clpv', $ruc)
-                                            ->where('clpv_clopv_clpv', 'PV') // 'PV' para Proveedor
-                                            ->exists();
-
-                                        if ($existeProveedor) {
-                                            $optionLabel .= ' <code>(EXISTE)</code>';
-                                        }
-                                        // ** FIN DE VERIFICACIÓN **
-                                        */
-
-                                        $empresasOptions[$optionKey] = $optionLabel;
-                                    }
-                                } catch (\Exception $e) {
-                                    \Log::error('Error al conectar con la base de datos externa para la empresa ID ' . $empresa->id . ': ' . $e->getMessage());
-                                    continue;
-                                }
-                            }
-
-                            return $empresasOptions;
-                        })
+                        ->options(fn(Get $get) => self::getEmpresasReplicacionOptions($get))
                         ->afterStateHydrated(function (Get $get, callable $set) {
+                            $state = $get('empresas_proveedor');
+                            if (!empty($state)) {
+                                return;
+                            }
+
+                            if (!request()->route('record')) {
+                                $set('empresas_proveedor', self::getEmpresasReplicacionDefault($get));
+                                return;
+                            }
 
                             $lineasNegocioIds = $get('lineasNegocio');
                             $amdgIdEmpresaCode = $get('admg_id_empresa');
@@ -748,6 +777,13 @@ class ProveedorResource extends Resource
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
+                Tables\Columns\TextColumn::make('anulada')
+                    ->label('Anulada')
+                    ->getStateUsing(fn($record) => $record->anulada ? 'SI' : 'NO')
+                    ->badge()
+                    ->color(fn($record) => $record->anulada ? 'danger' : 'success')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('lineasNegocio.nombre')
                     ->label('Líneas de negocio')
                     ->badge()
@@ -761,6 +797,22 @@ class ProveedorResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
                     ->visible(fn() => auth()->user()->can('Actualizar')),
+
+                Tables\Actions\Action::make('anular')
+                    ->label('Anular')
+                    ->color('danger')
+                    ->icon('heroicon-o-no-symbol')
+                    ->requiresConfirmation()
+                    ->visible(fn() => auth()->user()->can('Actualizar'))
+                    ->disabled(fn(Proveedores $record) => $record->anulada)
+                    ->action(function (Proveedores $record): void {
+                        $record->update(['anulada' => true]);
+
+                        Notification::make()
+                            ->title('Proveedor anulado')
+                            ->success()
+                            ->send();
+                    }),
 
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')
