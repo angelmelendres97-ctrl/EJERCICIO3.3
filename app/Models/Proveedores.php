@@ -32,6 +32,11 @@ class Proveedores extends Model
         'telefono',
         'direcccion',
         'correo',
+        'anulada',
+    ];
+
+    protected $casts = [
+        'anulada' => 'boolean',
     ];
 
     public function lineasNegocio()

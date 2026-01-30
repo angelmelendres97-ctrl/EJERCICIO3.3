@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ProformaResource\Pages;
 use App\Models\Proforma;
 use App\Models\Empresa;
+use App\Models\Proveedores;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -146,10 +147,20 @@ class ProformaResource extends Resource
                                     return [];
 
                                 try {
+                                    $anulados = Proveedores::query()
+                                        ->where('id_empresa', $empresaId)
+                                        ->where('anulada', true)
+                                        ->pluck('ruc')
+                                        ->filter()
+                                        ->all();
+
                                     return DB::connection($connectionName)
                                         ->table('saeclpv')
                                         ->where('clpv_cod_empr', $amdg_id_empresa)
                                         ->where('clpv_clopv_clpv', 'PV')
+                                        ->when(!empty($anulados), function ($query) use ($anulados) {
+                                            $query->whereNotIn('clpv_ruc_clpv', $anulados);
+                                        })
                                         ->select([
                                             'clpv_cod_clpv',
                                             DB::raw("clpv_nom_clpv || ' (' || clpv_ruc_clpv || ')' AS proveedor_etiqueta")
