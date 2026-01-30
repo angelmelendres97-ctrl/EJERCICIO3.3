@@ -8,6 +8,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\UafeService;
 
 // Importamos el Resource solo para obtener la conexión externa (asumiendo que esa lógica está allí)
 use App\Filament\Resources\ProveedorResource;
@@ -144,7 +145,6 @@ class ProveedorSyncService
                     'clpv_clopv_clpv' => 'PV',
                     'clpv_nom_clpv' => $nombre,
                     'clpv_ruc_clpv' => $identificacion,
-                    'clpv_est_clpv' => 'A',
                     'clpv_fec_has' => $fecha_server,
                     'clpv_fec_reno' => $fecha_server,
                     'clpv_nom_come' => $nombre_comercial,
@@ -170,6 +170,7 @@ class ProveedorSyncService
                 if (!$clpv_cod_clpv) {
                     // Solo en la creación se establece la fecha de inicio
                     $proveedorData['clpv_fec_des'] = $fecha_server;
+                    $proveedorData['clpv_est_clpv'] = UafeService::getEstadoInicialProveedor($conexionPgsql, $admg_empresa);
                     $clpv_cod_clpv = DB::connection($conexionPgsql)
                         ->table('saeclpv')
                         ->insertGetId($proveedorData, 'clpv_cod_clpv');

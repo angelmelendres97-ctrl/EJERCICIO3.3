@@ -20,6 +20,15 @@ use Filament\Forms\Set;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Http;
+use App\Services\UafeService;
+use Filament\Forms\Components\Actions;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 
 class ProveedorResource extends Resource
 {
@@ -662,6 +671,86 @@ class ProveedorResource extends Resource
                         })
                         ->columns(2)
                 ])->columns(1),
+            Forms\Components\Section::make('Documentación UAFE')
+                ->schema([
+                    Hidden::make('uafe_usa')
+                        ->dehydrated(false)
+                        ->afterStateHydrated(function (Get $get, Set $set, ?Proveedores $record): void {
+                            if (! $record) {
+                                $set('uafe_usa', false);
+                                $set('uafe_estado_label', 'No aplica');
+                                $set('uafe_documentos', []);
+                                return;
+                            }
+
+                            $estado = UafeService::getUafeFormState($record);
+                            $set('uafe_usa', $estado['usa_uafe']);
+                            $set('uafe_estado_label', $estado['estado_label']);
+                            $set('uafe_documentos', $estado['documentos']);
+                        }),
+                    Hidden::make('uafe_estado_label')
+                        ->dehydrated(false),
+                    Placeholder::make('uafe_estado_display')
+                        ->label('Estado UAFE')
+                        ->content(fn(Get $get) => $get('uafe_estado_label') ?: 'No aplica'),
+                    Actions::make([
+                        Action::make('reenviar_uafe')
+                            ->label('Reenviar documentos UAFE')
+                            ->icon('heroicon-o-paper-airplane')
+                            ->requiresConfirmation()
+                            ->action(function (?Proveedores $record): void {
+                                if (! $record) {
+                                    return;
+                                }
+
+                                $enviado = UafeService::enviarNotificacion($record);
+                                $notification = Notification::make()
+                                    ->title($enviado ? 'Correo UAFE enviado.' : 'No se pudo enviar el correo UAFE.');
+
+                                if ($enviado) {
+                                    $notification->success();
+                                } else {
+                                    $notification->danger();
+                                }
+
+                                $notification->send();
+                            }),
+                    ])->visible(fn(Get $get) => (bool) $get('uafe_usa')),
+                    Repeater::make('uafe_documentos')
+                        ->label('Documentos UAFE')
+                        ->schema([
+                            Hidden::make('id_uafe'),
+                            TextInput::make('titulo')
+                                ->label('Documento')
+                                ->disabled(),
+                            FileUpload::make('archivo')
+                                ->label('Archivo')
+                                ->disk('public')
+                                ->directory(function (Get $get, ?Proveedores $record) {
+                                    $ruc = $record?->ruc ?? 'sin-ruc';
+                                    return "uafe/proveedores/{$ruc}";
+                                })
+                                ->preserveFilenames()
+                                ->downloadable()
+                                ->openable(),
+                            DatePicker::make('fecha_entrega')
+                                ->label('Fecha entrega')
+                                ->disabled(),
+                            DatePicker::make('fecha_vencimiento')
+                                ->label('Fecha vencimiento')
+                                ->disabled(),
+                            TextInput::make('estado')
+                                ->label('Estado')
+                                ->disabled(),
+                            Toggle::make('cumple')
+                                ->label('Cumple')
+                                ->inline(false),
+                        ])
+                        ->columns(7)
+                        ->visible(fn(Get $get) => (bool) $get('uafe_usa')),
+                ])
+                ->columns(1)
+                ->visible(fn(?Proveedores $record) => (bool) $record),
         ];
     }
 
