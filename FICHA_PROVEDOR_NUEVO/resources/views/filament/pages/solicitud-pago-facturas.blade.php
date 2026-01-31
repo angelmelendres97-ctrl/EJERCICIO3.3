@@ -119,6 +119,13 @@
                         Limpiar
                     </button>
 
+                    @if ($this->solicitud)
+                        <button type="button" wire:click="openAgregarProveedoresModal"
+                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                            + Agregar proveedores
+                        </button>
+                    @endif
+
                     <button type="button" wire:click="openCompraModal"
                         class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
                         + Agregar Compra
@@ -563,6 +570,254 @@ $wire.$refresh()
                 </div>
             </div>
         </x-filament::section>
+    </div>
+
+    <div x-data="{ open: @entangle('showAgregarProveedoresModal').live }" x-cloak>
+        <div x-show="open" class="fixed inset-0 z-40 flex items-center justify-center px-4" x-transition.opacity>
+            <div class="absolute inset-0 bg-slate-900/50" @click="open = false"></div>
+
+            <div class="relative z-50 w-full max-w-6xl rounded-xl bg-white p-6 shadow-xl">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-800">Agregar proveedores y facturas</h2>
+                        <p class="text-sm text-slate-500">Seleccione proveedores adicionales para esta solicitud.</p>
+                    </div>
+                    <button type="button" class="text-slate-400 hover:text-slate-600" @click="open = false">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="mt-4 space-y-4">
+                    <div class="grid gap-4 sm:grid-cols-3">
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Conexiones</label>
+                            <select wire:model.live="addFilters.conexiones" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach ($this->addConexionesOptions as $conexionId => $conexionNombre)
+                                    <option value="{{ $conexionId }}">{{ $conexionNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Empresas</label>
+                            <select wire:model.live="addFilters.empresas" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach ($this->addEmpresasOptions as $empresaCodigo => $empresaNombre)
+                                    <option value="{{ $empresaCodigo }}">{{ $empresaNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Sucursales</label>
+                            <select wire:model.live="addFilters.sucursales" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach ($this->addSucursalesOptions as $sucursalCodigo => $sucursalNombre)
+                                    <option value="{{ $sucursalCodigo }}">{{ $sucursalNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="button" wire:click="loadAgregarProveedores"
+                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                            Cargar proveedores
+                        </button>
+                    </div>
+
+                    @if (!empty($this->addFacturasDisponibles))
+                        <div class="flex items-center justify-between gap-3">
+                            <input type="text" wire:model.live.debounce.300ms="addSearch"
+                                placeholder="Buscar proveedor, factura o RUC…"
+                                class="w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-3 text-sm focus:border-amber-500 focus:ring-amber-500" />
+                            <button type="button" wire:click="$set('addSearch','')"
+                                class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                                Limpiar
+                            </button>
+                        </div>
+
+                        <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                            @php
+                                $allAddSelected =
+                                    !empty($this->addFacturasDisponibles) &&
+                                    count($this->addSelectedProviders) >= count($this->addFacturasDisponibles);
+                            @endphp
+                            <div
+                                class="flex items-center justify-end gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox"
+                                        class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                        wire:change="toggleSelectAllAddProviders($event.target.checked)"
+                                        @checked($allAddSelected) />
+                                    Seleccionar todos
+                                </label>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left font-semibold text-gray-700">
+                                                <button type="button" wire:click="sortAddBy('proveedor_nombre')"
+                                                    class="flex items-center gap-1">
+                                                    Proveedor
+                                                    @if ($addSortField === 'proveedor_nombre')
+                                                        <span
+                                                            class="text-xs text-amber-600">{{ $addSortDirection === 'asc' ? '▲' : '▼' }}</span>
+                                                    @endif
+                                                </button>
+                                            </th>
+                                            <th class="px-4 py-2 text-right font-semibold text-gray-700">
+                                                <button type="button" wire:click="sortAddBy('total')"
+                                                    class="flex items-center gap-1 float-right">
+                                                    Total
+                                                    @if ($addSortField === 'total')
+                                                        <span
+                                                            class="text-xs text-amber-600">{{ $addSortDirection === 'asc' ? '▲' : '▼' }}</span>
+                                                    @endif
+                                                </button>
+                                            </th>
+                                            <th class="px-4 py-2 text-left font-semibold text-gray-700">Facturas</th>
+                                            <th class="px-4 py-2 text-center font-semibold text-gray-700">
+                                                <button type="button" wire:click="sortAddBy('selected')"
+                                                    class="flex items-center justify-center gap-1">
+                                                    Seleccionar
+                                                    @if ($addSortField === 'selected')
+                                                        <span
+                                                            class="text-xs text-amber-600">{{ $addSortDirection === 'asc' ? '▲' : '▼' }}</span>
+                                                    @endif
+                                                </button>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 bg-white">
+                                        @foreach ($this->addProvidersPaginated as $proveedor)
+                                            <tr class="align-top">
+                                                <td class="px-4 py-3">
+                                                    <div class="font-semibold text-gray-800">
+                                                        {{ $proveedor['proveedor_nombre'] ?? $proveedor['proveedor_codigo'] }}
+                                                    </div>
+                                                    <div class="text-xs text-gray-500">
+                                                        Código: {{ $proveedor['proveedor_codigo'] }}
+                                                        @if (!empty($proveedor['proveedor_ruc']))
+                                                            · RUC: {{ $proveedor['proveedor_ruc'] }}
+                                                        @endif
+                                                        <span
+                                                            class="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">{{ $proveedor['facturas_count'] ?? 0 }}
+                                                            factura(s)</span>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 text-right font-semibold text-gray-800">
+                                                    ${{ number_format((float) ($proveedor['total'] ?? 0), 2, '.', ',') }}
+                                                </td>
+                                                <td class="px-4 py-3">
+                                                    <details wire:key="add-prov-{{ $proveedor['key'] }}"
+                                                        x-data="{ open: $wire.entangle('addOpenProviders.{{ $proveedor['key'] }}').live }"
+                                                        :open="open" @toggle="open = $event.target.open"
+                                                        class="rounded-md border border-gray-200 bg-slate-50 p-3">
+                                                        <summary class="cursor-pointer text-sm font-semibold text-slate-700">
+                                                            Ver facturas agrupadas
+                                                        </summary>
+                                                        <div class="mt-2 space-y-3">
+                                                            @foreach ($proveedor['empresas'] ?? [] as $empresa)
+                                                                <div class="rounded-lg border border-slate-200 bg-white">
+                                                                    <div
+                                                                        class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                                                                        <span>{{ $empresa['conexion_nombre'] ?? 'Conexión' }}
+                                                                            ·
+                                                                            {{ $empresa['empresa_nombre'] ?? $empresa['empresa_codigo'] }}</span>
+                                                                    </div>
+                                                                    <div class="space-y-2 p-3">
+                                                                        @foreach ($empresa['sucursales'] ?? [] as $sucursal)
+                                                                            <div class="rounded-md border border-slate-200">
+                                                                                <div
+                                                                                    class="flex items-center justify-between bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700">
+                                                                                    <span>{{ $sucursal['sucursal_nombre'] ?? $sucursal['sucursal_codigo'] }}</span>
+                                                                                </div>
+                                                                                <div class="overflow-x-auto">
+                                                                                    <table
+                                                                                        class="min-w-full divide-y divide-gray-200 text-xs">
+                                                                                        <thead class="bg-white">
+                                                                                            <tr>
+                                                                                                <th
+                                                                                                    class="px-3 py-1 text-left font-semibold text-gray-700">
+                                                                                                    Factura</th>
+                                                                                                <th
+                                                                                                    class="px-3 py-1 text-left font-semibold text-gray-700">
+                                                                                                    Emisión</th>
+                                                                                                <th
+                                                                                                    class="px-3 py-1 text-left font-semibold text-gray-700">
+                                                                                                    Vencimiento</th>
+                                                                                                <th
+                                                                                                    class="px-3 py-1 text-right font-semibold text-gray-700">
+                                                                                                    Saldo</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody class="divide-y divide-gray-100">
+                                                                                            @foreach ($sucursal['facturas'] ?? [] as $factura)
+                                                                                                <tr>
+                                                                                                    <td
+                                                                                                        class="px-3 py-1 text-gray-700">
+                                                                                                        {{ $factura['numero'] ?? '' }}
+                                                                                                    </td>
+                                                                                                    <td
+                                                                                                        class="px-3 py-1 text-gray-700">
+                                                                                                        {{ $factura['fecha_emision'] ?? '' }}
+                                                                                                    </td>
+                                                                                                    <td
+                                                                                                        class="px-3 py-1 text-gray-700">
+                                                                                                        {{ $factura['fecha_vencimiento'] ?? '' }}
+                                                                                                    </td>
+                                                                                                    <td
+                                                                                                        class="px-3 py-1 text-right font-semibold text-gray-800">
+                                                                                                        ${{ number_format((float) ($factura['saldo'] ?? 0), 2, '.', ',') }}
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            @endforeach
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                        @endforeach
+                                                                    </div>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    </details>
+                                                </td>
+                                                <td class="px-4 py-3 text-center">
+                                                    <input type="checkbox" value="{{ $proveedor['key'] }}"
+                                                        wire:model.live="addSelectedProviders"
+                                                        class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="border-t border-gray-200 bg-white px-4 py-3">
+                                {{ $this->addProvidersPaginated->links() }}
+                            </div>
+                        </div>
+                    @else
+                        <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+                            Seleccione filtros y cargue proveedores para continuar.
+                        </div>
+                    @endif
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" wire:click="closeAgregarProveedoresModal"
+                        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="addSeleccionProveedores"
+                        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                        Agregar seleccionados
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div x-data="{ open: @entangle('showCompraModal').live }" x-cloak>
