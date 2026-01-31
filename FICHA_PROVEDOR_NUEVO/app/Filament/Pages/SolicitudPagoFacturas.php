@@ -214,11 +214,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
     {
         $conexiones = is_array($value) ? $value : array_filter([$value]);
 
-        $empresas = $this->buildDefaultEmpresasSelection($conexiones);
-        $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
-
-        $this->modalFilters['empresas'] = $empresas;
-        $this->modalFilters['sucursales'] = $sucursales;
+        $this->syncModalEmpresasSucursales($conexiones);
         $this->resetModalFacturasData();
     }
 
@@ -244,6 +240,20 @@ class SolicitudPagoFacturas extends Page implements HasForms
     public function loadModalFacturas(): void
     {
         $conexiones = $this->modalFilters['conexiones'] ?? [];
+
+        if (! empty($conexiones)) {
+            if (empty($this->modalFilters['empresas'] ?? [])) {
+                $this->modalFilters['empresas'] = $this->buildDefaultEmpresasSelection($conexiones);
+            }
+
+            if (empty($this->modalFilters['sucursales'] ?? [])) {
+                $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection(
+                    $conexiones,
+                    $this->modalFilters['empresas'] ?? []
+                );
+            }
+        }
+
         $empresas = $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? []);
         $sucursales = $this->groupOptionsByConnection($this->modalFilters['sucursales'] ?? []);
         $desde = $this->modalFilters['fecha_desde'] ?? null;
@@ -819,6 +829,13 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->modalFilters['empresas'] ?? [];
 
+        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+    }
+
+    protected function syncModalEmpresasSucursales(array $conexiones): void
+    {
+        $empresas = $this->buildDefaultEmpresasSelection($conexiones);
+        $this->modalFilters['empresas'] = $empresas;
         $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
     }
 
