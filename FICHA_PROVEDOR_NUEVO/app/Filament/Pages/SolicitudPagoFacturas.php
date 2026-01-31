@@ -214,8 +214,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
     {
         $conexiones = is_array($value) ? $value : array_filter([$value]);
 
-        $empresas = $this->buildDefaultEmpresasSelection($conexiones);
-        $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $empresas = $this->resolveModalEmpresasSelection($conexiones, $this->modalFilters['empresas'] ?? []);
+        $sucursales = $this->resolveModalSucursalesSelection($conexiones, $empresas, $this->modalFilters['sucursales'] ?? []);
 
         $this->modalFilters['empresas'] = $empresas;
         $this->modalFilters['sucursales'] = $sucursales;
@@ -227,7 +227,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->modalFilters['empresas'] ?? [];
 
-        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $this->modalFilters['sucursales'] = $this->resolveModalSucursalesSelection($conexiones, $empresas, $this->modalFilters['sucursales'] ?? []);
         $this->resetModalFacturasData();
     }
 
@@ -244,8 +244,12 @@ class SolicitudPagoFacturas extends Page implements HasForms
     public function loadModalFacturas(): void
     {
         $conexiones = $this->modalFilters['conexiones'] ?? [];
-        $empresas = $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? []);
-        $sucursales = $this->groupOptionsByConnection($this->modalFilters['sucursales'] ?? []);
+        $empresasSeleccionadas = $this->resolveModalEmpresasSelection($conexiones, $this->modalFilters['empresas'] ?? []);
+        $sucursalesSeleccionadas = $this->resolveModalSucursalesSelection($conexiones, $empresasSeleccionadas, $this->modalFilters['sucursales'] ?? []);
+        $this->modalFilters['empresas'] = $empresasSeleccionadas;
+        $this->modalFilters['sucursales'] = $sucursalesSeleccionadas;
+        $empresas = $this->groupOptionsByConnection($empresasSeleccionadas);
+        $sucursales = $this->groupOptionsByConnection($sucursalesSeleccionadas);
         $desde = $this->modalFilters['fecha_desde'] ?? null;
         $hasta = $this->modalFilters['fecha_hasta'] ?? null;
 
@@ -771,8 +775,9 @@ class SolicitudPagoFacturas extends Page implements HasForms
                             ->preload()
                             ->live()
                             ->afterStateUpdated(function (Forms\Set $set, ?array $state): void {
-                                $empresas = $this->buildDefaultEmpresasSelection($state ?? []);
-                                $sucursales = $this->buildDefaultSucursalesSelection($state ?? [], $empresas);
+                                $conexiones = $state ?? [];
+                                $empresas = $this->resolveModalEmpresasSelection($conexiones, $this->modalFilters['empresas'] ?? []);
+                                $sucursales = $this->resolveModalSucursalesSelection($conexiones, $empresas, $this->modalFilters['sucursales'] ?? []);
 
                                 $set('empresas', $empresas);
                                 $set('sucursales', $sucursales);
@@ -819,7 +824,11 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->modalFilters['empresas'] ?? [];
 
-        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $this->modalFilters['sucursales'] = $this->resolveModalSucursalesSelection(
+            $conexiones,
+            $empresas,
+            $this->modalFilters['sucursales'] ?? []
+        );
     }
 
     protected function resetFacturasData(): void
@@ -3015,6 +3024,52 @@ class SolicitudPagoFacturas extends Page implements HasForms
         }
 
         return $agrupado;
+    }
+
+    protected function filterSelectionsByConnections(array $optionKeys, array $conexiones): array
+    {
+        $conexiones = collect($conexiones)
+            ->map(fn($conexion) => (string) $conexion)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($conexiones)) {
+            return [];
+        }
+
+        $grouped = $this->groupOptionsByConnection($optionKeys);
+
+        return collect($conexiones)
+            ->flatMap(function (string $conexion) use ($grouped) {
+                return collect($grouped[(int) $conexion] ?? [])
+                    ->map(fn($codigo) => $conexion . '|' . $codigo);
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function resolveModalEmpresasSelection(array $conexiones, array $empresasSeleccionadas): array
+    {
+        $empresas = $this->filterSelectionsByConnections($empresasSeleccionadas, $conexiones);
+
+        if (empty($empresas) && ! empty($conexiones)) {
+            $empresas = $this->buildDefaultEmpresasSelection($conexiones);
+        }
+
+        return $empresas;
+    }
+
+    protected function resolveModalSucursalesSelection(array $conexiones, array $empresasSeleccionadas, array $sucursalesSeleccionadas): array
+    {
+        $sucursales = $this->filterSelectionsByConnections($sucursalesSeleccionadas, $conexiones);
+
+        if (empty($sucursales) && ! empty($conexiones)) {
+            $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresasSeleccionadas);
+        }
+
+        return $sucursales;
     }
 
 
