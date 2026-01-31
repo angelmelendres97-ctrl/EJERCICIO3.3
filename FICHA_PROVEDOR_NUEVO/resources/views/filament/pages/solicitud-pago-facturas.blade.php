@@ -663,10 +663,13 @@ $wire.$refresh()
     </div>
 
     <div x-data="{ open: @entangle('showAgregarFacturasModal').live }" x-cloak>
-        <div x-show="open" class="fixed inset-0 z-40 flex items-center justify-center px-4" x-transition.opacity>
+        <div x-show="open"
+            class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto px-4 py-6 sm:items-center sm:py-10"
+            x-transition.opacity>
             <div class="absolute inset-0 bg-slate-900/50" @click="open = false"></div>
 
-            <div class="relative z-50 w-full max-w-6xl rounded-xl bg-white p-6 shadow-xl">
+            <div
+                class="relative z-50 w-full max-w-6xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
                 <div class="flex items-start justify-between">
                     <div>
                         <h2 class="text-lg font-semibold text-slate-800">Agregar proveedores y facturas</h2>
@@ -679,11 +682,12 @@ $wire.$refresh()
                 </div>
 
                 <div class="mt-4 space-y-4">
-                    <div class="grid gap-4 md:grid-cols-3">
+                    <div class="rounded-lg border border-gray-200 bg-slate-50 p-4">
+                        <div class="grid gap-4 md:grid-cols-3">
                         <div>
                             <label class="text-sm font-semibold text-slate-700">Conexiones</label>
-                            <select wire:model.live="modalFilters.conexiones" multiple
-                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                            <select wire:model.live="modalFilters.conexiones" multiple size="1"
+                                class="mt-1 min-h-[42px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
                                 @foreach (\App\Models\Empresa::query()->pluck('nombre_empresa', 'id') as $conexionId => $conexionNombre)
                                     <option value="{{ $conexionId }}">{{ $conexionNombre }}</option>
                                 @endforeach
@@ -691,8 +695,8 @@ $wire.$refresh()
                         </div>
                         <div>
                             <label class="text-sm font-semibold text-slate-700">Empresas</label>
-                            <select wire:model.live="modalFilters.empresas" multiple
-                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                            <select wire:model.live="modalFilters.empresas" multiple size="1"
+                                class="mt-1 min-h-[42px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
                                 @foreach ($this->getEmpresasOptionsByConnections($this->modalFilters['conexiones'] ?? []) as $empresaKey => $empresaNombre)
                                     <option value="{{ $empresaKey }}">{{ $empresaNombre }}</option>
                                 @endforeach
@@ -700,12 +704,13 @@ $wire.$refresh()
                         </div>
                         <div>
                             <label class="text-sm font-semibold text-slate-700">Sucursales</label>
-                            <select wire:model.live="modalFilters.sucursales" multiple
-                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                            <select wire:model.live="modalFilters.sucursales" multiple size="1"
+                                class="mt-1 min-h-[42px] w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
                                 @foreach ($this->getSucursalesOptionsByConnections($this->modalFilters['conexiones'] ?? [], $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? [])) as $sucursalKey => $sucursalNombre)
                                     <option value="{{ $sucursalKey }}">{{ $sucursalNombre }}</option>
                                 @endforeach
                             </select>
+                        </div>
                         </div>
                     </div>
 
