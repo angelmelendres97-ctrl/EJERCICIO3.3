@@ -192,8 +192,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
             'conexiones' => $conexiones,
             'empresas' => $empresas,
             'sucursales' => $sucursales,
-            'fecha_desde' => $this->filters['fecha_desde'] ?? null,
-            'fecha_hasta' => $this->filters['fecha_hasta'] ?? null,
+            'fecha_desde' => null,
+            'fecha_hasta' => null,
         ];
 
         $this->modalSearch = '';
@@ -227,7 +227,9 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->modalFilters['empresas'] ?? [];
 
-        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $this->modalFilters['sucursales'] = $empresas
+            ? $this->buildDefaultSucursalesSelection($conexiones, $empresas)
+            : [];
         $this->resetModalFacturasData();
     }
 
