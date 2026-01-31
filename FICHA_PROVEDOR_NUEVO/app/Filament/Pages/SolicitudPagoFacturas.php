@@ -11,6 +11,7 @@ use Filament\Forms;
 use Filament\Forms\Components\Actions;
 use Filament\Forms\Components\Actions\Action as FormAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -747,12 +748,78 @@ class SolicitudPagoFacturas extends Page implements HasForms
             ]);
     }
 
+    protected function getForms(): array
+    {
+        return [
+            'form',
+            'modalForm',
+        ];
+    }
+
+    public function modalForm(Form $form): Form
+    {
+        return $form
+            ->statePath('modalFilters')
+            ->schema([
+                Grid::make(3)
+                    ->schema([
+                        Select::make('conexiones')
+                            ->label('Conexiones')
+                            ->multiple()
+                            ->options(\App\Models\Empresa::query()->pluck('nombre_empresa', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(function (Forms\Set $set, ?array $state): void {
+                                $empresas = $this->buildDefaultEmpresasSelection($state ?? []);
+                                $sucursales = $this->buildDefaultSucursalesSelection($state ?? [], $empresas);
+
+                                $set('empresas', $empresas);
+                                $set('sucursales', $sucursales);
+                                $this->resetModalFacturasData();
+                            }),
+                        Select::make('empresas')
+                            ->label('Empresas')
+                            ->multiple()
+                            ->options(fn(Forms\Get $get): array => $this->getEmpresasOptionsByConnections($get('conexiones') ?? []))
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(function (): void {
+                                $this->syncModalSucursales();
+                                $this->resetModalFacturasData();
+                            }),
+                        Select::make('sucursales')
+                            ->label('Sucursales')
+                            ->multiple()
+                            ->options(fn(Forms\Get $get): array => $this->getSucursalesOptionsByConnections(
+                                $get('conexiones') ?? [],
+                                $this->groupOptionsByConnection($get('empresas') ?? []),
+                            ))
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(function (): void {
+                                $this->resetModalFacturasData();
+                            }),
+                    ]),
+            ]);
+    }
+
     protected function syncSucursales(): void
     {
         $conexiones = $this->filters['conexiones'] ?? [];
         $empresas = $this->filters['empresas'] ?? [];
 
         $this->filters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+    }
+
+    protected function syncModalSucursales(): void
+    {
+        $conexiones = $this->modalFilters['conexiones'] ?? [];
+        $empresas = $this->modalFilters['empresas'] ?? [];
+
+        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
     }
 
     protected function resetFacturasData(): void
