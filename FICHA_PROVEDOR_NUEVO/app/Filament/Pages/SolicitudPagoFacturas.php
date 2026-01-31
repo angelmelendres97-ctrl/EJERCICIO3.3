@@ -200,6 +200,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $this->modalSortField = 'proveedor_nombre';
         $this->modalSortDirection = 'asc';
         $this->resetModalFacturasData();
+        $this->modalForm->fill($this->modalFilters);
     }
 
     protected function resetModalFacturasData(): void
@@ -220,6 +221,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $this->modalFilters['empresas'] = $empresas;
         $this->modalFilters['sucursales'] = $sucursales;
         $this->resetModalFacturasData();
+        $this->modalForm->fill($this->modalFilters);
     }
 
     public function updatedModalFiltersEmpresas(): void
@@ -229,6 +231,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
         $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
         $this->resetModalFacturasData();
+        $this->modalForm->fill($this->modalFilters);
     }
 
     public function updatedModalFiltersSucursales(): void
@@ -244,6 +247,16 @@ class SolicitudPagoFacturas extends Page implements HasForms
     public function loadModalFacturas(): void
     {
         $conexiones = $this->modalFilters['conexiones'] ?? [];
+        if (! empty($conexiones) && empty($this->modalFilters['empresas'] ?? [])) {
+            $this->modalFilters['empresas'] = $this->buildDefaultEmpresasSelection($conexiones);
+        }
+        if (! empty($conexiones) && empty($this->modalFilters['sucursales'] ?? [])) {
+            $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection(
+                $conexiones,
+                $this->modalFilters['empresas'] ?? []
+            );
+        }
+
         $empresas = $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? []);
         $sucursales = $this->groupOptionsByConnection($this->modalFilters['sucursales'] ?? []);
         $desde = $this->modalFilters['fecha_desde'] ?? null;
