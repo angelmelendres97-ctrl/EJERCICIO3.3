@@ -2467,26 +2467,35 @@ class SolicitudPagoFacturas extends Page implements HasForms
                     ->on('prov.clpv_cod_clpv', '=', 'saedmcp.clpv_cod_clpv');
             })
             ->whereIn('saedmcp.dmcp_cod_empr', $empresas)
-            ->when(! empty($sucursales), fn($q) => $q->whereIn('saedmcp.dmcp_cod_sucu', $sucursales))
+            ->when(
+                ! empty($sucursales),
+                fn($q) =>
+                $q->whereIn('saedmcp.dmcp_cod_sucu', $sucursales)
+            )
             ->where('saedmcp.dmcp_est_dcmp', '<>', 'AN')
-            ->selectRaw('
-                saedmcp.dmcp_cod_empr   as empresa,
-                saedmcp.dmcp_cod_sucu   as sucursal,
-                saedmcp.clpv_cod_clpv   as proveedor_codigo,
-                prov.clpv_nom_clpv      as proveedor_nombre,
-                prov.clpv_ruc_clpv      as proveedor_ruc,
-                prov.clpv_desc_actividades as proveedor_actividad,
-                saedmcp.dmcp_num_fac    as numero_factura,
-                MIN(saedmcp.dcmp_fec_emis) as fecha_emision,
-                MAX(saedmcp.dmcp_fec_ven)  as fecha_vencimiento,
-                ABS(SUM(
-                        COALESCE(saedmcp.dcmp_deb_ml, 0)
-                        - COALESCE(saedmcp.dcmp_cre_ml, 0)
-                    )) as saldo
-                 ')
-            ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
-            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) <> 0');
-
+            ->select([
+                'saedmcp.dmcp_cod_empr as empresa',
+                'saedmcp.dmcp_cod_sucu as sucursal',
+                'saedmcp.clpv_cod_clpv as proveedor_codigo',
+                'prov.clpv_nom_clpv as proveedor_nombre',
+                'prov.clpv_ruc_clpv as proveedor_ruc',
+                'saedmcp.dmcp_num_fac as numero_factura',
+            ])
+            ->addSelect(DB::raw('MAX(prov.clpv_desc_actividades) as proveedor_actividad'))
+            ->addSelect(DB::raw('MIN(saedmcp.dcmp_fec_emis) as fecha_emision'))
+            ->addSelect(DB::raw('MAX(saedmcp.dmcp_fec_ven) as fecha_vencimiento'))
+            ->addSelect(DB::raw('ABS(SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0))) as saldo'))
+            ->groupBy(
+                'saedmcp.dmcp_cod_empr',
+                'saedmcp.dmcp_cod_sucu',
+                'saedmcp.clpv_cod_clpv',
+                'prov.clpv_nom_clpv',
+                'prov.clpv_ruc_clpv',
+                'saedmcp.dmcp_num_fac'
+            )
+            ->havingRaw(
+                'SUM(COALESCE(saedmcp.dcmp_deb_ml,0) - COALESCE(saedmcp.dcmp_cre_ml,0)) <> 0'
+            );
         if ($fechaDesde && $fechaHasta) {
             $query->whereBetween('saedmcp.dcmp_fec_emis', [$fechaDesde, $fechaHasta]);
         }
