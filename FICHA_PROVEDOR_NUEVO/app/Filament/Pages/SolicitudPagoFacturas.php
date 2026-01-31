@@ -66,6 +66,28 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     public bool $showCompraModal = false;
 
+    public bool $showAgregarProveedoresModal = false;
+
+    public array $addFilters = [
+        'conexiones' => [],
+        'empresas' => [],
+        'sucursales' => [],
+    ];
+
+    public array $addFacturasDisponibles = [];
+
+    public array $addSelectedProviders = [];
+
+    public array $addOpenProviders = [];
+
+    public string $addSearch = '';
+
+    public ?string $addSortField = 'proveedor_nombre';
+
+    public string $addSortDirection = 'asc';
+
+    public bool $addSelectAllProviders = false;
+
     public int $perPage = 10;
 
     public string $search = '';
@@ -127,6 +149,17 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $this->showCompraModal = false;
     }
 
+    public function openAgregarProveedoresModal(): void
+    {
+        $this->resetAgregarProveedoresModal();
+        $this->showAgregarProveedoresModal = true;
+    }
+
+    public function closeAgregarProveedoresModal(): void
+    {
+        $this->showAgregarProveedoresModal = false;
+    }
+
     protected function resetCompraForm(): void
     {
         $conexionId = $this->solicitud?->id_empresa
@@ -141,9 +174,62 @@ class SolicitudPagoFacturas extends Page implements HasForms
         ];
     }
 
+    protected function resetAgregarProveedoresModal(): void
+    {
+        $conexionId = $this->solicitud?->id_empresa
+            ?? collect($this->filters['conexiones'] ?? [])->first();
+
+        $conexiones = $conexionId ? [$conexionId] : [];
+        $empresas = $this->buildDefaultEmpresasSelection($conexiones);
+        $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+
+        $this->addFilters = [
+            'conexiones' => $conexiones,
+            'empresas' => $empresas,
+            'sucursales' => $sucursales,
+        ];
+
+        $this->resetAgregarProveedoresData();
+    }
+
+    protected function resetAgregarProveedoresData(): void
+    {
+        $this->addFacturasDisponibles = [];
+        $this->addSelectedProviders = [];
+        $this->addOpenProviders = [];
+        $this->addSearch = '';
+        $this->addSelectAllProviders = false;
+        $this->addSortField = 'proveedor_nombre';
+        $this->addSortDirection = 'asc';
+        $this->resetPage('add-providers');
+    }
+
     public function updatedCompraFormConexionId($value): void
     {
         $this->compraForm['empresa_codigo'] = null;
+    }
+
+    public function updatedAddFiltersConexiones(?array $state): void
+    {
+        $empresas = $this->buildDefaultEmpresasSelection($state ?? []);
+        $sucursales = $this->buildDefaultSucursalesSelection($state ?? [], $empresas);
+
+        $this->addFilters['empresas'] = $empresas;
+        $this->addFilters['sucursales'] = $sucursales;
+        $this->resetAgregarProveedoresData();
+    }
+
+    public function updatedAddFiltersEmpresas(): void
+    {
+        $conexiones = $this->addFilters['conexiones'] ?? [];
+        $empresas = $this->addFilters['empresas'] ?? [];
+        $this->addFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $this->resetAgregarProveedoresData();
+    }
+
+    public function updatedAddSearch(): void
+    {
+        $this->resetPage('add-providers');
     }
 
     public function guardarCompra(): void
@@ -250,6 +336,68 @@ class SolicitudPagoFacturas extends Page implements HasForms
             ->send();
     }
 
+    public function loadAgregarProveedores(): void
+    {
+        if ($this->isSolicitudAprobada()) {
+            Notification::make()
+                ->title('La solicitud ya fue aprobada y no puede modificarse.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $conexiones = $this->addFilters['conexiones'] ?? [];
+        if (empty($conexiones)) {
+            $this->resetAgregarProveedoresData();
+            return;
+        }
+
+        $empresas = $this->groupOptionsByConnection($this->addFilters['empresas'] ?? []);
+        $sucursales = $this->groupOptionsByConnection($this->addFilters['sucursales'] ?? []);
+
+        $this->resetAgregarProveedoresData();
+        $this->addFacturasDisponibles = $this->buildFacturas($conexiones, $empresas, $sucursales, null, null);
+    }
+
+    public function addSeleccionProveedores(): void
+    {
+        if ($this->isSolicitudAprobada()) {
+            Notification::make()
+                ->title('La solicitud ya fue aprobada y no puede modificarse.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $seleccionados = collect($this->addFacturasDisponibles)
+            ->filter(fn(array $proveedor) => in_array($proveedor['key'] ?? null, $this->addSelectedProviders, true))
+            ->values()
+            ->all();
+
+        if (empty($seleccionados)) {
+            Notification::make()
+                ->title('Seleccione al menos un proveedor para agregar.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $this->mergeFacturasDisponibles($seleccionados);
+        $this->syncProviderMetadata($this->facturasDisponibles);
+        $this->syncAllProviderAbonosFromInvoices();
+        $this->filters['monto_estimado'] = $this->montoEsperado;
+
+        Notification::make()
+            ->title('Proveedores agregados a la solicitud.')
+            ->success()
+            ->send();
+
+        $this->closeAgregarProveedoresModal();
+    }
+
 
 
     public function updatedSearch(): void
@@ -330,6 +478,24 @@ class SolicitudPagoFacturas extends Page implements HasForms
         }
 
         return SolicitudPagoResource::getEmpresasOptions((int) $conexionId);
+    }
+
+    public function getAddConexionesOptionsProperty(): array
+    {
+        return \App\Models\Empresa::query()->pluck('nombre_empresa', 'id')->all();
+    }
+
+    public function getAddEmpresasOptionsProperty(): array
+    {
+        return $this->getEmpresasOptionsByConnections($this->addFilters['conexiones'] ?? []);
+    }
+
+    public function getAddSucursalesOptionsProperty(): array
+    {
+        return $this->getSucursalesOptionsByConnections(
+            $this->addFilters['conexiones'] ?? [],
+            $this->groupOptionsByConnection($this->addFilters['empresas'] ?? [])
+        );
     }
 
     protected function hydrateFromRecord(): void
@@ -2152,6 +2318,84 @@ class SolicitudPagoFacturas extends Page implements HasForms
             ->all();
     }
 
+    protected function flattenProveedores(array $proveedores): array
+    {
+        $rows = [];
+
+        foreach ($proveedores as $proveedor) {
+            $providerKey = $proveedor['key'] ?? null;
+            $proveedorCodigo = $proveedor['proveedor_codigo'] ?? null;
+            $proveedorNombre = $proveedor['proveedor_nombre'] ?? $proveedorCodigo;
+            $proveedorRuc = $proveedor['proveedor_ruc'] ?? null;
+            $proveedorActividad = $proveedor['proveedor_actividad'] ?? null;
+            $area = $providerKey ? ($this->providerAreas[$providerKey] ?? ($proveedor['area'] ?? null)) : ($proveedor['area'] ?? null);
+            $descripcion = $providerKey ? ($this->providerDescriptions[$providerKey] ?? ($proveedor['descripcion'] ?? null)) : ($proveedor['descripcion'] ?? null);
+
+            foreach ($proveedor['empresas'] ?? [] as $empresa) {
+                foreach ($empresa['sucursales'] ?? [] as $sucursal) {
+                    foreach ($sucursal['facturas'] ?? [] as $factura) {
+                        $rows[] = [
+                            'conexion_id' => $factura['conexion_id'] ?? ($empresa['conexion_id'] ?? null),
+                            'conexion_nombre' => $factura['conexion_nombre'] ?? ($empresa['conexion_nombre'] ?? null),
+                            'empresa_codigo' => $factura['empresa_codigo'] ?? ($empresa['empresa_codigo'] ?? null),
+                            'empresa_nombre' => $factura['empresa_nombre'] ?? ($empresa['empresa_nombre'] ?? null),
+                            'sucursal_codigo' => $factura['sucursal_codigo'] ?? ($sucursal['sucursal_codigo'] ?? null),
+                            'sucursal_nombre' => $factura['sucursal_nombre'] ?? ($sucursal['sucursal_nombre'] ?? null),
+                            'proveedor_codigo' => $proveedorCodigo,
+                            'proveedor_nombre' => $proveedorNombre,
+                            'proveedor_ruc' => $proveedorRuc,
+                            'proveedor_actividad' => $proveedorActividad,
+                            'numero' => $factura['numero'] ?? '',
+                            'fecha_emision' => $factura['fecha_emision'] ?? null,
+                            'fecha_vencimiento' => $factura['fecha_vencimiento'] ?? null,
+                            'saldo' => (float) ($factura['saldo'] ?? 0),
+                            'total' => (float) ($factura['total'] ?? $factura['saldo'] ?? 0),
+                            'tipo' => $factura['tipo'] ?? (! empty($proveedor['es_compra']) ? 'compra' : null),
+                            'area' => $area,
+                            'descripcion' => $descripcion,
+                            'factura_key' => $factura['key'] ?? null,
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    protected function resolveFacturaKeyFromRow(array $row): string
+    {
+        return (string) ($row['factura_key'] ?? $this->buildFacturaKey(
+            (string) ($row['conexion_id'] ?? ''),
+            (string) ($row['empresa_codigo'] ?? ''),
+            (string) ($row['sucursal_codigo'] ?? ''),
+            (string) ($row['proveedor_codigo'] ?? ''),
+            (string) ($row['numero'] ?? ''),
+            (string) ($row['proveedor_ruc'] ?? '')
+        ));
+    }
+
+    protected function mergeFacturasDisponibles(array $nuevosProveedores): void
+    {
+        $existingRows = $this->flattenProveedores($this->facturasDisponibles);
+        $existingKeys = collect($existingRows)
+            ->mapWithKeys(fn(array $row) => [$this->resolveFacturaKeyFromRow($row) => true])
+            ->all();
+
+        foreach ($this->flattenProveedores($nuevosProveedores) as $row) {
+            $key = $this->resolveFacturaKeyFromRow($row);
+
+            if (isset($existingKeys[$key])) {
+                continue;
+            }
+
+            $existingKeys[$key] = true;
+            $existingRows[] = $row;
+        }
+
+        $this->facturasDisponibles = $this->groupByProveedor($existingRows);
+    }
+
     protected function syncProviderMetadata(array $proveedores): void
     {
         $existingDescriptions = $this->providerDescriptions;
@@ -2166,6 +2410,101 @@ class SolicitudPagoFacturas extends Page implements HasForms
             $this->providerAreas[$key] = $existingAreas[$key]
                 ?? ($proveedor['area'] ?? '');
         }
+    }
+
+    protected function applyAddSearch($proveedores)
+    {
+        $termino = trim((string) $this->addSearch);
+
+        if ($termino === '') {
+            return $proveedores;
+        }
+
+        $termino = mb_strtolower($termino);
+
+        return collect($proveedores)->filter(function (array $proveedor) use ($termino) {
+            $matchesProveedor = str_contains(mb_strtolower($proveedor['proveedor_nombre'] ?? ''), $termino)
+                || str_contains(mb_strtolower($proveedor['proveedor_codigo'] ?? ''), $termino)
+                || str_contains(mb_strtolower($proveedor['proveedor_ruc'] ?? ''), $termino);
+
+            if ($matchesProveedor) {
+                return true;
+            }
+
+            foreach ($proveedor['empresas'] ?? [] as $empresa) {
+                foreach ($empresa['sucursales'] ?? [] as $sucursal) {
+                    foreach ($sucursal['facturas'] ?? [] as $factura) {
+                        if (str_contains(mb_strtolower((string) ($factura['numero'] ?? '')), $termino)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        });
+    }
+
+    public function getAddProvidersPaginatedProperty(): LengthAwarePaginator
+    {
+        $filtrados = $this->applyAddSearch($this->addFacturasDisponibles);
+        $proveedores = $this->applyAddSort(collect($filtrados))->values();
+        $page = $this->getPage('add-providers');
+        $items = $proveedores->forPage($page, $this->perPage)->values();
+
+        return new LengthAwarePaginator(
+            $items,
+            $proveedores->count(),
+            $this->perPage,
+            $page,
+            ['pageName' => 'add-providers']
+        );
+    }
+
+    public function sortAddBy(string $field): void
+    {
+        if ($this->addSortField === $field) {
+            $this->addSortDirection = $this->addSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->addSortField = $field;
+            $this->addSortDirection = 'asc';
+        }
+
+        $this->resetPage('add-providers');
+    }
+
+    protected function applyAddSort($proveedores)
+    {
+        if (! $this->addSortField) {
+            return collect($proveedores);
+        }
+
+        return collect($proveedores)->sortBy(
+            function (array $proveedor) {
+                return match ($this->addSortField) {
+                    'total' => (float) ($proveedor['total'] ?? 0),
+                    'selected' => in_array($proveedor['key'] ?? null, $this->addSelectedProviders, true) ? 1 : 0,
+                    default => mb_strtolower($proveedor['proveedor_nombre'] ?? $proveedor['proveedor_codigo'] ?? ''),
+                };
+            },
+            descending: $this->addSortDirection === 'desc'
+        );
+    }
+
+    public function toggleSelectAllAddProviders(bool $selected): void
+    {
+        $this->addSelectAllProviders = $selected;
+
+        if (! $selected) {
+            $this->addSelectedProviders = [];
+            return;
+        }
+
+        $this->addSelectedProviders = collect($this->addFacturasDisponibles)
+            ->pluck('key')
+            ->filter()
+            ->values()
+            ->all();
     }
 
     protected function applySearch($proveedores)
