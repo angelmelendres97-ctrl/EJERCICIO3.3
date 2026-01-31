@@ -184,6 +184,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
     {
         $conexiones = $this->filters['conexiones']
             ?? ($this->solicitud?->id_empresa ? [$this->solicitud->id_empresa] : []);
+        $conexiones = $this->normalizeConnectionSelection($conexiones);
 
         $empresas = $this->filters['empresas'] ?? $this->buildDefaultEmpresasSelection($conexiones);
         $sucursales = $this->filters['sucursales'] ?? $this->buildDefaultSucursalesSelection($conexiones, $empresas);
@@ -192,8 +193,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
             'conexiones' => $conexiones,
             'empresas' => $empresas,
             'sucursales' => $sucursales,
-            'fecha_desde' => $this->filters['fecha_desde'] ?? null,
-            'fecha_hasta' => $this->filters['fecha_hasta'] ?? null,
+            'fecha_desde' => null,
+            'fecha_hasta' => null,
         ];
 
         $this->modalSearch = '';
@@ -212,7 +213,8 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     public function updatedModalFiltersConexiones($value): void
     {
-        $conexiones = is_array($value) ? $value : array_filter([$value]);
+        $rawConexiones = is_array($value) ? $value : array_filter([$value]);
+        $conexiones = $this->normalizeConnectionSelection($rawConexiones);
 
         $empresas = $this->buildDefaultEmpresasSelection($conexiones);
         $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
@@ -227,7 +229,9 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->modalFilters['empresas'] ?? [];
 
-        $this->modalFilters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
+        $this->modalFilters['sucursales'] = $empresas
+            ? $this->buildDefaultSucursalesSelection($conexiones, $empresas)
+            : [];
         $this->resetModalFacturasData();
     }
 
@@ -246,8 +250,6 @@ class SolicitudPagoFacturas extends Page implements HasForms
         $conexiones = $this->modalFilters['conexiones'] ?? [];
         $empresas = $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? []);
         $sucursales = $this->groupOptionsByConnection($this->modalFilters['sucursales'] ?? []);
-        $desde = $this->modalFilters['fecha_desde'] ?? null;
-        $hasta = $this->modalFilters['fecha_hasta'] ?? null;
 
         $this->resetModalFacturasData();
 
@@ -260,7 +262,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
             return;
         }
 
-        $this->modalFacturasDisponibles = $this->buildFacturas($conexiones, $empresas, $sucursales, $desde, $hasta);
+        $this->modalFacturasDisponibles = $this->buildModalFacturas($conexiones, $empresas, $sucursales);
     }
 
     public function agregarFacturasSeleccionadas(): void
@@ -771,8 +773,9 @@ class SolicitudPagoFacturas extends Page implements HasForms
                             ->preload()
                             ->live()
                             ->afterStateUpdated(function (Forms\Set $set, ?array $state): void {
-                                $empresas = $this->buildDefaultEmpresasSelection($state ?? []);
-                                $sucursales = $this->buildDefaultSucursalesSelection($state ?? [], $empresas);
+                                $conexiones = $this->normalizeConnectionSelection($state ?? []);
+                                $empresas = $this->buildDefaultEmpresasSelection($conexiones);
+                                $sucursales = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
 
                                 $set('empresas', $empresas);
                                 $set('sucursales', $sucursales);
@@ -781,7 +784,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
                         Select::make('empresas')
                             ->label('Empresas')
                             ->multiple()
-                            ->options(fn(Forms\Get $get): array => $this->getEmpresasOptionsByConnections($get('conexiones') ?? []))
+                            ->options(fn(Forms\Get $get): array => $this->getEmpresasOptionsByConnections($this->normalizeConnectionSelection($get('conexiones') ?? [])))
                             ->searchable()
                             ->preload()
                             ->live()
@@ -793,7 +796,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
                             ->label('Sucursales')
                             ->multiple()
                             ->options(fn(Forms\Get $get): array => $this->getSucursalesOptionsByConnections(
-                                $get('conexiones') ?? [],
+                                $this->normalizeConnectionSelection($get('conexiones') ?? []),
                                 $this->groupOptionsByConnection($get('empresas') ?? []),
                             ))
                             ->searchable()
@@ -2514,6 +2517,143 @@ class SolicitudPagoFacturas extends Page implements HasForms
         return $this->groupByProveedor($registros);
     }
 
+    protected function buildModalFacturas(array $conexiones, array $empresasSeleccionadas, array $sucursalesSeleccionadas): array
+    {
+        $connectionNames = \App\Models\Empresa::query()->pluck('nombre_empresa', 'id');
+        $registros = collect();
+
+        foreach ($conexiones as $conexion) {
+            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
+
+            if (empty($empresas)) {
+                continue;
+            }
+
+            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
+            $registros = $registros->merge($this->fetchModalInvoices($conexion, $empresas, $sucursales, $connectionNames[$conexion] ?? ''));
+        }
+
+        return $this->groupByProveedor($registros);
+    }
+
+    protected function fetchModalInvoices(int $conexion, array $empresas, array $sucursales, string $conexionNombre): array
+    {
+        $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
+
+        if (! $connectionName) {
+            return [];
+        }
+
+        $abonosPendientes = SolicitudPagoResource::getAbonosPendientesSolicitudes($conexion, $empresas, $sucursales);
+        $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
+        $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
+        $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
+
+        $query = DB::connection($connectionName)
+            ->table('saedmcp')
+            ->join('saeclpv as prov', function ($join) {
+                $join->on('prov.clpv_cod_empr', '=', 'saedmcp.dmcp_cod_empr')
+                    ->on('prov.clpv_cod_sucu', '=', 'saedmcp.dmcp_cod_sucu')
+                    ->on('prov.clpv_cod_clpv', '=', 'saedmcp.clpv_cod_clpv');
+            })
+            ->whereIn('saedmcp.dmcp_cod_empr', $empresas)
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('saedmcp.dmcp_cod_sucu', $sucursales))
+            ->where('saedmcp.dmcp_est_dcmp', '<>', 'AN')
+            ->selectRaw('
+                saedmcp.dmcp_cod_empr   as empresa,
+                saedmcp.dmcp_cod_sucu   as sucursal,
+                saedmcp.clpv_cod_clpv   as proveedor_codigo,
+                prov.clpv_nom_clpv      as proveedor_nombre,
+                prov.clpv_ruc_clpv      as proveedor_ruc,
+                prov.clpv_nom_clpv      as proveedor_descripcion,
+                saedmcp.dmcp_num_fac    as numero_factura,
+
+                MIN(saedmcp.dcmp_fec_emis) FILTER (WHERE COALESCE(saedmcp.dcmp_cre_ml,0) > 0) as fecha_emision,
+                MAX(saedmcp.dmcp_fec_ven)  as fecha_vencimiento,
+
+                SUM(COALESCE(saedmcp.dcmp_deb_ml,0)) as total_debito,
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0)) as total_credito,
+
+                SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) as saldo_pendiente
+            ')
+            ->groupBy('saedmcp.dmcp_cod_empr', 'saedmcp.dmcp_cod_sucu', 'saedmcp.clpv_cod_clpv', 'prov.clpv_nom_clpv', 'prov.clpv_ruc_clpv', 'saedmcp.dmcp_num_fac')
+            ->orderBy('prov.clpv_nom_clpv')
+            ->havingRaw('SUM(COALESCE(saedmcp.dcmp_cre_ml,0) - COALESCE(saedmcp.dcmp_deb_ml,0)) <> 0');
+
+        $rows = $query->get();
+        $resultados = collect();
+
+        $rows
+            ->groupBy(fn($row) => $row->empresa . '|' . $row->sucursal . '|' . $row->proveedor_codigo)
+            ->each(function ($items) use (&$resultados, $conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes): void {
+                $facturas = $items
+                    ->filter(fn($row) => (float) ($row->saldo_pendiente ?? 0) > 0)
+                    ->sortBy('fecha_emision')
+                    ->values()
+                    ->map(fn($row) => [
+                        'row' => $row,
+                        'saldo' => (float) ($row->saldo_pendiente ?? 0),
+                    ])
+                    ->all();
+
+                $cruces = $items
+                    ->filter(fn($row) => (float) ($row->saldo_pendiente ?? 0) < 0)
+                    ->sortBy('fecha_emision')
+                    ->values();
+
+                foreach ($cruces as $cruce) {
+                    $saldoAplicar = abs((float) ($cruce->saldo_pendiente ?? 0));
+
+                    for ($i = 0; $i < count($facturas) && $saldoAplicar > 0; $i++) {
+                        $saldoFactura = (float) ($facturas[$i]['saldo'] ?? 0);
+
+                        if ($saldoFactura <= 0) {
+                            continue;
+                        }
+
+                        $aplicado = min($saldoFactura, $saldoAplicar);
+                        $facturas[$i]['saldo'] = $saldoFactura - $aplicado;
+                        $saldoAplicar -= $aplicado;
+                    }
+                }
+
+                foreach ($facturas as $facturaData) {
+                    $row = $facturaData['row'];
+                    $empresaCodigo = $row->empresa;
+                    $sucursalCodigo = $row->sucursal;
+                    $facturaKey = $empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo . '|' . $row->numero_factura;
+
+                    $saldoFactura = (float) ($facturaData['saldo'] ?? 0);
+                    $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
+                    $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
+
+                    if ($saldoPendiente <= 0) {
+                        continue;
+                    }
+
+                    $resultados->push([
+                        'conexion_id' => $conexion,
+                        'conexion_nombre' => $conexionNombre,
+                        'empresa_codigo' => $empresaCodigo,
+                        'empresa_nombre' => $empresasDisponibles[$empresaCodigo] ?? $empresaCodigo,
+                        'sucursal_codigo' => $sucursalCodigo,
+                        'sucursal_nombre' => $sucursalesDisponibles[$sucursalCodigo] ?? $sucursalCodigo,
+                        'proveedor_codigo' => $row->proveedor_codigo,
+                        'proveedor_nombre' => $row->proveedor_nombre ?? ($proveedoresBase[$empresaCodigo . '|' . $sucursalCodigo . '|' . $row->proveedor_codigo]['nombre'] ?? $row->proveedor_codigo),
+                        'proveedor_ruc' => $row->proveedor_ruc,
+                        'proveedor_actividad' => $row->proveedor_descripcion ?? null,
+                        'numero' => $row->numero_factura,
+                        'fecha_emision' => $row->fecha_emision,
+                        'fecha_vencimiento' => $row->fecha_vencimiento,
+                        'total' => $saldoPendiente,
+                        'saldo' => $saldoPendiente,
+                    ]);
+                }
+            });
+
+        return $resultados->all();
+    }
+
     protected function fetchInvoices(int $conexion, array $empresas, array $sucursales, ?string $fechaDesde, ?string $fechaHasta, string $conexionNombre): array
     {
         $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
@@ -2944,7 +3084,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     protected function getEmpresasOptionsByConnections(array $conexiones): array
     {
-        return collect($conexiones)
+        return collect($this->normalizeConnectionSelection($conexiones))
             ->flatMap(function ($conexion) {
                 return collect(SolicitudPagoResource::getEmpresasOptions($conexion))
                     ->mapWithKeys(fn($nombre, $codigo) => [
@@ -2956,7 +3096,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     protected function getSucursalesOptionsByConnections(array $conexiones, array $empresasSeleccionadas): array
     {
-        return collect($conexiones)
+        return collect($this->normalizeConnectionSelection($conexiones))
             ->flatMap(function ($conexion) use ($empresasSeleccionadas) {
                 $empresas = $empresasSeleccionadas[$conexion] ?? [];
 
@@ -3020,7 +3160,7 @@ class SolicitudPagoFacturas extends Page implements HasForms
 
     protected function buildDefaultEmpresasSelection(array $conexiones): array
     {
-        return collect($conexiones)
+        return collect($this->normalizeConnectionSelection($conexiones))
             ->flatMap(fn($conexion) => collect(SolicitudPagoResource::getEmpresasOptions($conexion))->keys()->map(fn($codigo) => $conexion . '|' . $codigo))
             ->values()
             ->all();
@@ -3030,10 +3170,21 @@ class SolicitudPagoFacturas extends Page implements HasForms
     {
         $empresas = $this->groupOptionsByConnection($empresasSeleccionadas);
 
-        return collect($conexiones)
+        return collect($this->normalizeConnectionSelection($conexiones))
             ->flatMap(fn($conexion) => collect(SolicitudPagoResource::getSucursalesOptions($conexion, $empresas[$conexion] ?? []))
                 ->keys()
                 ->map(fn($codigo) => $conexion . '|' . $codigo))
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeConnectionSelection(array $conexiones): array
+    {
+        return collect($conexiones)
+            ->flatten()
+            ->filter(fn($conexion) => $conexion !== null && $conexion !== '')
+            ->map(fn($conexion) => (int) $conexion)
+            ->unique()
             ->values()
             ->all();
     }
