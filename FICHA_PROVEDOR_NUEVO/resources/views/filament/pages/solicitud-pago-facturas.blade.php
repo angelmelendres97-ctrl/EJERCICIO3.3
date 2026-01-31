@@ -123,6 +123,12 @@
                         class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
                         + Agregar Compra
                     </button>
+                    @if ($this->solicitud)
+                        <button type="button" wire:click="openAgregarFacturasModal"
+                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                            + Agregar proveedores/facturas
+                        </button>
+                    @endif
                 </div>
 
 
@@ -650,6 +656,285 @@ $wire.$refresh()
                     <button type="button" wire:click="guardarCompra"
                         class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
                         Guardar compra
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-data="{ open: @entangle('showAgregarFacturasModal').live }" x-cloak>
+        <div x-show="open" class="fixed inset-0 z-40 flex items-center justify-center px-4" x-transition.opacity>
+            <div class="absolute inset-0 bg-slate-900/50" @click="open = false"></div>
+
+            <div class="relative z-50 w-full max-w-6xl rounded-xl bg-white p-6 shadow-xl">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-800">Agregar proveedores y facturas</h2>
+                        <p class="text-sm text-slate-500">Seleccione proveedores y facturas para agregarlos a la
+                            solicitud.</p>
+                    </div>
+                    <button type="button" class="text-slate-400 hover:text-slate-600" @click="open = false">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="mt-4 space-y-4">
+                    <div class="grid gap-4 md:grid-cols-3">
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Conexiones</label>
+                            <select wire:model.live="modalFilters.conexiones" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach (\App\Models\Empresa::query()->pluck('nombre_empresa', 'id') as $conexionId => $conexionNombre)
+                                    <option value="{{ $conexionId }}">{{ $conexionNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Empresas</label>
+                            <select wire:model.live="modalFilters.empresas" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach ($this->getEmpresasOptionsByConnections($this->modalFilters['conexiones'] ?? []) as $empresaKey => $empresaNombre)
+                                    <option value="{{ $empresaKey }}">{{ $empresaNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-700">Sucursales</label>
+                            <select wire:model.live="modalFilters.sucursales" multiple
+                                class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500">
+                                @foreach ($this->getSucursalesOptionsByConnections($this->modalFilters['conexiones'] ?? [], $this->groupOptionsByConnection($this->modalFilters['empresas'] ?? [])) as $sucursalKey => $sucursalNombre)
+                                    <option value="{{ $sucursalKey }}">{{ $sucursalNombre }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div class="relative w-full">
+                            <input type="text" wire:model.live.debounce.300ms="modalSearch"
+                                placeholder="Buscar proveedor, factura o RUC…"
+                                class="w-full rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-3 text-sm focus:border-amber-500 focus:ring-amber-500" />
+                        </div>
+                        <button type="button" wire:click="loadModalFacturas"
+                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                            Cargar proveedores
+                        </button>
+                    </div>
+
+                    <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                        @php
+                            $modalColumnsCount = 3;
+                        @endphp
+
+                        <div
+                            class="flex items-center justify-end gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox"
+                                    class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                    wire:click="toggleModalAllFacturasSelection"
+                                    @checked($this->modalAllFacturasSelected()) />
+                                Seleccionar todas las facturas
+                            </label>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left font-semibold text-gray-700">
+                                            <button type="button" wire:click="sortModalBy('proveedor_nombre')"
+                                                class="flex items-center gap-1">
+                                                Proveedor
+                                                @if ($this->modalSortField === 'proveedor_nombre')
+                                                    <span
+                                                        class="text-xs text-amber-600">{{ $this->modalSortDirection === 'asc' ? '▲' : '▼' }}</span>
+                                                @endif
+                                            </button>
+                                        </th>
+                                        <th class="px-4 py-2 text-right font-semibold text-gray-700">
+                                            <button type="button" wire:click="sortModalBy('total')"
+                                                class="flex items-center gap-1 float-right">
+                                                Total
+                                                @if ($this->modalSortField === 'total')
+                                                    <span
+                                                        class="text-xs text-amber-600">{{ $this->modalSortDirection === 'asc' ? '▲' : '▼' }}</span>
+                                                @endif
+                                            </button>
+                                        </th>
+                                        <th class="px-4 py-2 text-left font-semibold text-gray-700">Facturas</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 bg-white">
+                                    @forelse ($this->modalProvidersPaginated as $proveedor)
+                                        <tr class="align-top">
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-gray-800">
+                                                    {{ $proveedor['proveedor_nombre'] ?? $proveedor['proveedor_codigo'] }}
+                                                </div>
+                                                <div class="text-xs text-gray-500">
+                                                    Código: {{ $proveedor['proveedor_codigo'] }}
+                                                    @if (!empty($proveedor['proveedor_ruc']))
+                                                        · RUC: {{ $proveedor['proveedor_ruc'] }}
+                                                    @endif
+                                                    <span
+                                                        class="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">{{ $proveedor['facturas_count'] ?? 0 }}
+                                                        factura(s)</span>
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-3 text-right font-semibold text-gray-800">
+                                                ${{ number_format((float) ($proveedor['total'] ?? 0), 2, '.', ',') }}
+                                            </td>
+                                            <td class="px-4 py-3 align-top">
+                                                <details wire:key="modal-prov-{{ $proveedor['key'] }}"
+                                                    x-data="{ open: $wire.entangle('modalOpenProviders.{{ $proveedor['key'] }}').live }"
+                                                    :open="open" @toggle="open = $event.target.open"
+                                                    class="rounded-md border border-gray-200 bg-slate-50 p-3 w-full">
+                                                    <summary class="cursor-pointer text-sm font-semibold text-slate-700">
+                                                        Ver detalle agrupado
+                                                    </summary>
+                                                    <div class="mt-2 space-y-3 w-full">
+                                                        @foreach ($proveedor['empresas'] ?? [] as $empresa)
+                                                            <div class="rounded-lg border border-slate-200 bg-white">
+                                                                <div
+                                                                    class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                                                                    @php
+                                                                        $empresaKey =
+                                                                            ($empresa['conexion_id'] ?? '') .
+                                                                            '|' .
+                                                                            ($empresa['empresa_codigo'] ?? '');
+                                                                        $empresaSeleccionada = $this->modalEmpresaHasAllSelected(
+                                                                            $proveedor['key'],
+                                                                            $empresaKey,
+                                                                        );
+                                                                    @endphp
+                                                                    <span>{{ $empresa['conexion_nombre'] ?? 'Conexión' }}
+                                                                        ·
+                                                                        {{ $empresa['empresa_nombre'] ?? $empresa['empresa_codigo'] }}</span>
+                                                                    <div class="flex items-center gap-3">
+                                                                        <span
+                                                                            class="text-[11px] font-medium text-slate-500">{{ count($empresa['sucursales'] ?? []) }}
+                                                                            sucursal(es)</span>
+                                                                        <label
+                                                                            class="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                                                                            <input type="checkbox"
+                                                                                class="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                                                wire:click="toggleModalEmpresaSelection({{ \Illuminate\Support\Js::from($proveedor['key']) }}, {{ \Illuminate\Support\Js::from($empresaKey) }})"
+                                                                                @checked($empresaSeleccionada) />
+                                                                            Seleccionar
+                                                                        </label>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="space-y-2 p-3 w-full">
+                                                                    @foreach ($empresa['sucursales'] ?? [] as $sucursal)
+                                                                        <div
+                                                                            class="rounded-md border border-slate-200">
+                                                                            <div
+                                                                                class="flex items-center justify-between bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700">
+                                                                                @php
+                                                                                    $sucursalKey =
+                                                                                        $empresaKey .
+                                                                                        '|' .
+                                                                                        ($sucursal['sucursal_codigo'] ?? '');
+                                                                                    $sucursalSeleccionada = $this->modalSucursalHasAllSelected(
+                                                                                        $proveedor['key'],
+                                                                                        $empresaKey,
+                                                                                        $sucursalKey,
+                                                                                    );
+                                                                                @endphp
+                                                                                <span>{{ $sucursal['sucursal_nombre'] ?? $sucursal['sucursal_codigo'] }}</span>
+                                                                                <label
+                                                                                    class="flex items-center gap-1 text-[11px] font-medium text-slate-600">
+                                                                                    <input type="checkbox"
+                                                                                        class="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                                                        wire:click="toggleModalSucursalSelection({{ \Illuminate\Support\Js::from($proveedor['key']) }}, {{ \Illuminate\Support\Js::from($empresaKey) }}, {{ \Illuminate\Support\Js::from($sucursalKey) }})"
+                                                                                        @checked($sucursalSeleccionada) />
+                                                                                    Seleccionar
+                                                                                </label>
+                                                                            </div>
+                                                                            <div
+                                                                                class="overflow-x-auto lg:overflow-visible">
+                                                                                <table
+                                                                                    class="w-full table-auto divide-y divide-gray-200 text-xs">
+                                                                                    <thead class="bg-white">
+                                                                                        <tr>
+                                                                                            <th
+                                                                                                class="px-3 py-1 text-left font-semibold text-gray-700">
+                                                                                                Factura</th>
+                                                                                            <th
+                                                                                                class="px-3 py-1 text-left font-semibold text-gray-700">
+                                                                                                Emisión</th>
+                                                                                            <th
+                                                                                                class="px-3 py-1 text-right font-semibold text-gray-700">
+                                                                                                Saldo</th>
+                                                                                            <th
+                                                                                                class="px-3 py-1 text-center font-semibold text-gray-700">
+                                                                                                Seleccionar</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody
+                                                                                        class="divide-y divide-gray-100">
+                                                                                        @foreach ($sucursal['facturas'] ?? [] as $factura)
+                                                                                            <tr
+                                                                                                wire:key="modal-fac-{{ $factura['key'] }}">
+                                                                                                <td
+                                                                                                    class="px-3 py-1 text-gray-700">
+                                                                                                    {{ $factura['numero'] ?? '' }}
+                                                                                                </td>
+                                                                                                <td
+                                                                                                    class="px-3 py-1 text-gray-700">
+                                                                                                    {{ $factura['fecha_emision'] ?? '' }}
+                                                                                                </td>
+                                                                                                <td
+                                                                                                    class="px-3 py-1 text-right font-semibold text-gray-800">
+                                                                                                    ${{ number_format((float) ($factura['saldo'] ?? 0), 2, '.', ',') }}
+                                                                                                </td>
+                                                                                                <td
+                                                                                                    class="px-3 py-1 text-center">
+                                                                                                    <input
+                                                                                                        type="checkbox"
+                                                                                                        value="{{ $factura['key'] }}"
+                                                                                                        wire:model.live="modalSelectedInvoices"
+                                                                                                        class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        @endforeach
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                </div>
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+                                                </details>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="{{ $modalColumnsCount }}"
+                                                class="px-4 py-4 text-center text-sm text-gray-600">
+                                                Seleccione filtros para visualizar las facturas disponibles.</td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="border-t border-gray-200 bg-white px-4 py-3">
+                            {{ $this->modalProvidersPaginated->links() }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" wire:click="closeAgregarFacturasModal"
+                        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                        Cancelar
+                    </button>
+                    <button type="button" wire:click="agregarFacturasSeleccionadas"
+                        class="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                        Agregar seleccionadas
                     </button>
                 </div>
             </div>
