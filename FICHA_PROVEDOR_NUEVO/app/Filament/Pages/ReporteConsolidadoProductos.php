@@ -643,31 +643,17 @@ class ReporteConsolidadoProductos extends Page implements HasForms
         $this->selectedProductos[$key] = $producto;
     }
 
-    public function selectVisibleProductos(): void
+    public function selectAllProductos(): void
     {
-        foreach ($this->productosPaginated as $producto) {
+        $this->selectedProductos = [];
+
+        foreach ($this->getProductosParaExportar() as $producto) {
             if (! isset($producto['key'])) {
                 continue;
             }
 
             $this->selectedProductos[$producto['key']] = $producto;
         }
-    }
-
-    public function deselectVisibleProductos(): void
-    {
-        foreach ($this->productosPaginated as $producto) {
-            if (! isset($producto['key'])) {
-                continue;
-            }
-
-            unset($this->selectedProductos[$producto['key']]);
-        }
-    }
-
-    public function clearSelectedProductos(): void
-    {
-        $this->selectedProductos = [];
     }
 
     protected function exportPdf(string $descripcionReporte)
