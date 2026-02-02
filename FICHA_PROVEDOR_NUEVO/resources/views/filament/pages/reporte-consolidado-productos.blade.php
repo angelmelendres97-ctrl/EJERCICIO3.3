@@ -29,11 +29,34 @@
                     </button>
                 </div>
 
+                <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div class="font-semibold text-gray-700">
+                        Seleccionados: {{ count($selectedProductos) }}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" wire:click="selectVisibleProductos"
+                            class="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
+                            Seleccionar visibles
+                        </button>
+                        <button type="button" wire:click="deselectVisibleProductos"
+                            class="inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                            Deseleccionar visibles
+                        </button>
+                        <button type="button" wire:click="clearSelectedProductos"
+                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                            Limpiar selección
+                        </button>
+                    </div>
+                </div>
+
                 <div class="overflow-hidden rounded-xl border border-gray-200 bg-white w-full">
                     <div class="overflow-x-auto">
                         <table class="w-full table-fixed divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr>
+                                    <th class="w-[6%] px-4 py-2 text-left font-semibold text-gray-700">
+                                        Selección
+                                    </th>
                                     <th class="w-[12%] px-4 py-2 text-left font-semibold text-gray-700">
                                         <button type="button" wire:click="sortBy('producto_codigo')"
                                             class="flex items-center gap-1">
@@ -75,6 +98,12 @@
                                 wire:key="productos-page-{{ $this->getPage() }}">
                                 @forelse ($this->productosPaginated as $producto)
                                     <tr class="align-top" wire:key="prod-{{ $producto['key'] }}">
+                                        <td class="px-4 py-3">
+                                            <input type="checkbox"
+                                                wire:click="toggleProductoSelection('{{ $producto['key'] }}', @js($producto))"
+                                                class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                                @checked(isset($selectedProductos[$producto['key']])) />
+                                        </td>
                                         <td class="px-4 py-3 text-sm font-semibold text-gray-800">
                                             {{ $producto['producto_codigo'] ?? 'N/D' }}
                                             @if (!empty($producto['producto_barra']))
@@ -142,7 +171,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-4 py-6 text-center text-sm text-gray-600">
+                                        <td colspan="5" class="px-4 py-6 text-center text-sm text-gray-600">
                                             Seleccione filtros y cargue el reporte para visualizar los productos.
                                         </td>
                                     </tr>

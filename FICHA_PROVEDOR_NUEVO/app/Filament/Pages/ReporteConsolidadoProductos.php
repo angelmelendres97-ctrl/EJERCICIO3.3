@@ -51,6 +51,8 @@ class ReporteConsolidadoProductos extends Page implements HasForms
 
     public int $productosTotal = 0;
 
+    public array $selectedProductos = [];
+
     public function mount(): void
     {
         $this->form->fill([
@@ -202,17 +204,18 @@ class ReporteConsolidadoProductos extends Page implements HasForms
             ->whereIn('prod.prod_cod_empr', $empresas)
             ->when(! empty($sucursales), fn($q) => $q->whereIn('prod.prod_cod_sucu', $sucursales))
             ->when($terminoBusqueda !== '', function ($q) use ($terminoBusqueda) {
-                $like = '%' . $terminoBusqueda . '%';
+                $terminoLower = mb_strtolower($terminoBusqueda);
+                $like = '%' . $terminoLower . '%';
 
                 $q->where(function ($builder) use ($like) {
                     $builder
-                        ->where('prod.prod_nom_prod', 'like', $like)
-                        ->orWhere('prod.prod_cod_prod', 'like', $like)
-                        ->orWhere('prod.prod_det_prod', 'like', $like)
-                        ->orWhere('prod.prod_des_prod', 'like', $like)
-                        ->orWhere('prod.prod_cod_barra', 'like', $like)
-                        ->orWhere('sucu.sucu_nom_sucu', 'like', $like)
-                        ->orWhere('bode.bode_nom_bode', 'like', $like);
+                        ->whereRaw('LOWER(prod.prod_nom_prod) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(prod.prod_cod_prod) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(prod.prod_det_prod) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(prod.prod_des_prod) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(prod.prod_cod_barra) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(sucu.sucu_nom_sucu) LIKE ?', [$like])
+                        ->orWhereRaw('LOWER(bode.bode_nom_bode) LIKE ?', [$like]);
                 });
             })
             ->select([
@@ -629,13 +632,51 @@ class ReporteConsolidadoProductos extends Page implements HasForms
         $this->resetPage();
     }
 
+    public function toggleProductoSelection(string $key, array $producto): void
+    {
+        if (isset($this->selectedProductos[$key])) {
+            unset($this->selectedProductos[$key]);
+
+            return;
+        }
+
+        $this->selectedProductos[$key] = $producto;
+    }
+
+    public function selectVisibleProductos(): void
+    {
+        foreach ($this->productosPaginated as $producto) {
+            if (! isset($producto['key'])) {
+                continue;
+            }
+
+            $this->selectedProductos[$producto['key']] = $producto;
+        }
+    }
+
+    public function deselectVisibleProductos(): void
+    {
+        foreach ($this->productosPaginated as $producto) {
+            if (! isset($producto['key'])) {
+                continue;
+            }
+
+            unset($this->selectedProductos[$producto['key']]);
+        }
+    }
+
+    public function clearSelectedProductos(): void
+    {
+        $this->selectedProductos = [];
+    }
+
     protected function exportPdf(string $descripcionReporte)
     {
-        $productos = $this->getProductosParaExportar()->values();
+        $productos = collect($this->selectedProductos)->values();
 
         if ($productos->isEmpty()) {
             Notification::make()
-                ->title('No hay productos para exportar')
+                ->title('Seleccione productos para exportar')
                 ->warning()
                 ->send();
 
