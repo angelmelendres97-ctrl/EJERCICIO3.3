@@ -78,7 +78,7 @@
             </x-filament::section> --}}
 
             <x-filament::section>
-                <x-slot name="heading">Órdenes de compra por estado</x-slot>
+                <x-slot name="heading">Órdenes de compra por estado y presupuesto</x-slot>
                 <x-slot name="description">Filtrado por el periodo seleccionado.</x-slot>
                 <div class="relative h-72" wire:key="ordenes-estado-{{ $selectedMonth }}-{{ $selectedYear }}">
                     <div x-data="chartRenderer(@js($this->ordenCompraStatusChartData), 'doughnut')" x-init="init()"
@@ -101,7 +101,7 @@
             </x-filament::section>
 
             <x-filament::section>
-                <x-slot name="heading">Resúmenes por estado</x-slot>
+                <x-slot name="heading">Resúmenes por estado y presupuesto</x-slot>
                 <div class="relative h-72" wire:key="resumenes-estado-{{ $selectedMonth }}-{{ $selectedYear }}">
                     <div x-data="chartRenderer(@js($this->resumenStatusChartData), 'doughnut')" x-init="init()"
                         class="h-full">

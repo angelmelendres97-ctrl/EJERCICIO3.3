@@ -6,6 +6,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationBuilder;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -44,17 +45,32 @@ class AdminPanelProvider extends PanelProvider
                 // Obtener menús según el rol del usuario
                 $menuItems = Menu::whereHas('roles', function ($query) use ($user) {
                     $query->whereIn('name', $user->roles->pluck('name'));
-                })->orWhereDoesntHave('roles')->orderBy('orden')->get();
+                })
+                    ->orWhereDoesntHave('roles')
+                    ->orderBy('grupo')
+                    ->orderBy('orden')
+                    ->get();
 
                 $navigationItems = [];
                 foreach ($menuItems as $menuItem) {
                     $navigationItems[] = \Filament\Navigation\NavigationItem::make($menuItem->nombre)
                         ->icon($menuItem->icono)
                         ->url($menuItem->ruta)
+                        ->group($menuItem->grupo ?: 'General')
                         ->isActiveWhen(fn (): bool => request()->routeIs($menuItem->ruta));
                 }
 
-                return $navigation->items($navigationItems);
+                $groups = $menuItems
+                    ->pluck('grupo')
+                    ->map(fn(?string $grupo) => $grupo ?: 'General')
+                    ->unique()
+                    ->sort()
+                    ->values()
+                    ->map(fn(string $grupo) => NavigationGroup::make($grupo));
+
+                return $navigation
+                    ->groups($groups->all())
+                    ->items($navigationItems);
             })
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
