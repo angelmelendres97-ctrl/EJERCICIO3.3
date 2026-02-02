@@ -24,7 +24,7 @@ class Dashboard extends BaseDashboard
     public function getWidgets(): array
     {
         return [
-            UsuariosPorRolChart::class,
+            /* UsuariosPorRolChart::class, */
             OrdenesCompraPorEstadoChart::class,
             OrdenesCompraTotalPorEmpresaChart::class,
             ResumenPedidosPorEstadoChart::class,
