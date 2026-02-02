@@ -8,6 +8,7 @@ class Menu extends Model
 {
     protected $fillable = [
         'nombre',
+        'grupo',
         'icono',
         'ruta',
         'activo',

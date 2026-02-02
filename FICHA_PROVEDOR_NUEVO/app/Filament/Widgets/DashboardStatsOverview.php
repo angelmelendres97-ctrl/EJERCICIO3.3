@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Empresa;
 use App\Models\OrdenCompra;
+use App\Models\Proveedores;
 use App\Models\ResumenPedidos;
 use App\Models\User;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
@@ -28,6 +29,9 @@ class DashboardStatsOverview extends BaseWidget
             Stat::make('Resumenes de pedidos', ResumenPedidos::query()->count())
                 ->description('Resumenes registrados')
                 ->icon('heroicon-o-document-text'),
+            Stat::make('Proveedores registrados', Proveedores::query()->count())
+                ->description('Total de proveedores registrados')
+                ->icon('heroicon-o-building-storefront'),
             Stat::make('Empresas activas', Empresa::query()->count())
                 ->description('Empresas en la plataforma')
                 ->icon('heroicon-o-building-office-2'),
