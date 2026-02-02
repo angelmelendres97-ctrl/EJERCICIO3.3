@@ -10,7 +10,7 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
 {
     use HasMonthYearFilters;
 
-    protected static ?string $heading = 'Órdenes de compra por estado';
+    protected static ?string $heading = 'Órdenes de compra por estado y presupuesto';
 
     public ?string $filter = null;
 
@@ -29,18 +29,68 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
         $baseQuery = OrdenCompra::query();
         $this->applyMonthYearFilter($baseQuery, 'fecha_pedido', true);
 
-        $ordenesActivas = (clone $baseQuery)->where('anulada', false)->count();
-        $ordenesAnuladas = (clone $baseQuery)->where('anulada', true)->count();
+        $presupuestos = $this->getPresupuestos($baseQuery, 'presupuesto');
+        $labels = [];
+        $values = [];
+        $colors = [];
+
+        $activePalette = ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0'];
+        $cancelledPalette = ['#ef4444', '#f87171', '#fca5a5', '#fecaca'];
+
+        foreach ($presupuestos as $index => $presupuesto) {
+            $labels[] = sprintf('Activas - %s', $presupuesto);
+            $values[] = $this->countByEstadoYPresupuesto($baseQuery, false, 'presupuesto', $presupuesto);
+            $colors[] = $activePalette[$index % count($activePalette)];
+        }
+
+        foreach ($presupuestos as $index => $presupuesto) {
+            $labels[] = sprintf('Anuladas - %s', $presupuesto);
+            $values[] = $this->countByEstadoYPresupuesto($baseQuery, true, 'presupuesto', $presupuesto);
+            $colors[] = $cancelledPalette[$index % count($cancelledPalette)];
+        }
 
         return [
             'datasets' => [
                 [
                     'label' => 'Órdenes',
-                    'data' => [$ordenesActivas, $ordenesAnuladas],
-                    'backgroundColor' => ['#10b981', '#ef4444'],
+                    'data' => $values,
+                    'backgroundColor' => $colors,
                 ],
             ],
-            'labels' => ['Activas', 'Anuladas'],
+            'labels' => $labels,
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getPresupuestos($baseQuery, string $column): array
+    {
+        $presupuestos = (clone $baseQuery)
+            ->select($column)
+            ->distinct()
+            ->pluck($column)
+            ->map(fn($value) => $value ?: 'Sin presupuesto')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $presupuestos ?: ['Sin presupuesto'];
+    }
+
+    private function countByEstadoYPresupuesto($baseQuery, bool $anulada, string $column, string $presupuesto): int
+    {
+        $query = (clone $baseQuery)->where('anulada', $anulada);
+
+        if ($presupuesto === 'Sin presupuesto') {
+            $query->where(function ($innerQuery) use ($column) {
+                $innerQuery->whereNull($column)->orWhere($column, '');
+            });
+        } else {
+            $query->where($column, $presupuesto);
+        }
+
+        return $query->count();
     }
 }
