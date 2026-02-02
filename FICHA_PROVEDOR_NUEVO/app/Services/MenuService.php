@@ -23,6 +23,7 @@ class MenuService
             // Obtener los menús activos ordenados
             $menus = Menu::where('activo', true)
                 ->with('roles')
+                ->orderBy('grupo')
                 ->orderBy('orden')
                 ->get();
             
