@@ -44,13 +44,17 @@ class AdminPanelProvider extends PanelProvider
                 // Obtener menús según el rol del usuario
                 $menuItems = Menu::whereHas('roles', function ($query) use ($user) {
                     $query->whereIn('name', $user->roles->pluck('name'));
-                })->orWhereDoesntHave('roles')->orderBy('orden')->get();
+                })->orWhereDoesntHave('roles')
+                    ->orderBy('grupo')
+                    ->orderBy('orden')
+                    ->get();
 
                 $navigationItems = [];
                 foreach ($menuItems as $menuItem) {
                     $navigationItems[] = \Filament\Navigation\NavigationItem::make($menuItem->nombre)
                         ->icon($menuItem->icono)
                         ->url($menuItem->ruta)
+                        ->group($menuItem->grupo ?: 'General')
                         ->isActiveWhen(fn (): bool => request()->routeIs($menuItem->ruta));
                 }
 

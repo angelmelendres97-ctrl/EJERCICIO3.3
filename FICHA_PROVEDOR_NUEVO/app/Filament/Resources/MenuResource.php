@@ -29,6 +29,10 @@ class MenuResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->placeholder('Ej: Usuarios, Productos, Reportes'),
+                        Forms\Components\TextInput::make('grupo')
+                            ->label('Grupo')
+                            ->placeholder('Ej: Seguridad, Compras, Reportes')
+                            ->helperText('Agrupa el menú para mostrarlo en el sidebar por módulo o categoría.'),
                         Forms\Components\TextInput::make('icono')
                             ->placeholder('heroicon-o-home, heroicon-o-users, heroicon-o-chart-bar')
                             ->helperText('Usa iconos de Heroicons. Visita: https://heroicons.com/'),
@@ -63,6 +67,9 @@ class MenuResource extends Resource
                 Tables\Columns\TextColumn::make('nombre')
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('grupo')
+                    ->searchable()
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('ruta')
                     ->searchable()
                     ->sortable(),
@@ -76,6 +83,12 @@ class MenuResource extends Resource
                     ->badge()
                     ->separator(','),
             ])
+            ->groups([
+                Tables\Grouping\Group::make('grupo')
+                    ->label('Grupo')
+                    ->collapsible(),
+            ])
+            ->defaultGroup('grupo')
             ->filters([
                 //
             ])
