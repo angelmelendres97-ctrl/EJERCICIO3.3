@@ -34,13 +34,9 @@
                         Seleccionados: {{ count($selectedProductos) }}
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" wire:click="selectVisibleProductos"
+                        <button type="button" wire:click="selectAllProductos"
                             class="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
-                            Seleccionar visibles
-                        </button>
-                        <button type="button" wire:click="deselectVisibleProductos"
-                            class="inline-flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100">
-                            Deseleccionar visibles
+                            Seleccionar todos
                         </button>
                         <button type="button" wire:click="clearSelectedProductos"
                             class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100">
