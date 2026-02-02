@@ -317,6 +317,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
                     'unid.unid_nom_unid',
                     'unid.unid_sigl_unid',
                 ])
+                ->distinct()
                 ->get();
         } catch (\Throwable $e) {
             return [];

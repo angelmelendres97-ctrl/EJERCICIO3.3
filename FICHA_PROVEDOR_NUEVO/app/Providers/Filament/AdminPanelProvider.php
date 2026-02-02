@@ -33,19 +33,19 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
-            ->navigation(function (NavigationBuilder $navigation) {
+            /* ->navigation(function (NavigationBuilder $navigation) {
                 // Esta es la forma correcta de obtener el usuario autenticado
                 $user = auth()->user();
-                
+
                 if (!$user) {
                     return $navigation;
                 }
-                
+
                 // Obtener menús según el rol del usuario
                 $menuItems = Menu::whereHas('roles', function ($query) use ($user) {
                     $query->whereIn('name', $user->roles->pluck('name'));
                 })->orWhereDoesntHave('roles')->orderBy('orden')->get();
-                
+
                 $navigationItems = [];
                 foreach ($menuItems as $menuItem) {
                     $navigationItems[] = \Filament\Navigation\NavigationItem::make($menuItem->nombre)
@@ -53,9 +53,9 @@ class AdminPanelProvider extends PanelProvider
                         ->url($menuItem->ruta)
                         ->isActiveWhen(fn (): bool => request()->routeIs($menuItem->ruta));
                 }
-                
+
                 return $navigation->items($navigationItems);
-            })
+            }) */
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
