@@ -56,18 +56,7 @@
                                             @endif
                                         </button>
                                     </th>
-                                    <th class="w-[22%] px-4 py-2 text-left font-semibold text-gray-700">Descripción</th>
-                                    <th class="w-[12%] px-4 py-2 text-right font-semibold text-gray-700">
-                                        <button type="button" wire:click="sortBy('precio_promedio')"
-                                            class="flex items-center gap-1 float-right">
-                                            Precio prom.
-                                            @if ($sortField === 'precio_promedio')
-                                                <span class="text-xs text-amber-600">
-                                                    {{ $sortDirection === 'asc' ? '▲' : '▼' }}
-                                                </span>
-                                            @endif
-                                        </button>
-                                    </th>
+
                                     <th class="w-[10%] px-4 py-2 text-right font-semibold text-gray-700">
                                         <button type="button" wire:click="sortBy('stock_total')"
                                             class="flex items-center gap-1 float-right">
@@ -100,12 +89,8 @@
                                                 <div class="text-xs text-gray-500">Unidad: {{ $producto['unidad'] }}</div>
                                             @endif
                                         </td>
-                                        <td class="px-4 py-3 text-gray-700">
-                                            {{ $producto['producto_descripcion'] ?? 'Sin descripción' }}
-                                        </td>
-                                        <td class="px-4 py-3 text-right font-semibold text-gray-800">
-                                            ${{ number_format((float) ($producto['precio_promedio'] ?? 0), 2, '.', ',') }}
-                                        </td>
+
+
                                         <td class="px-4 py-3 text-right font-semibold text-gray-800">
                                             {{ number_format((float) ($producto['stock_total'] ?? 0), 2, '.', ',') }}
                                         </td>
