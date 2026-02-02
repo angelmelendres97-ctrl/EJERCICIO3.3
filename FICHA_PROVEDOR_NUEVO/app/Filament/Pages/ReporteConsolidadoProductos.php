@@ -16,6 +16,7 @@ use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -39,7 +40,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
 
     public ?array $filters = [];
 
-    public array $productos = [];
+    public bool $reportLoaded = false;
 
     public int $perPage = 10;
 
@@ -48,6 +49,8 @@ class ReporteConsolidadoProductos extends Page implements HasForms
     public ?string $sortField = 'producto_nombre';
 
     public string $sortDirection = 'asc';
+
+    protected ?int $productosCountCache = null;
 
     public function mount(): void
     {
@@ -59,6 +62,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
     public function updatedSearch(): void
     {
         $this->resetPage();
+        $this->resetProductosCache();
     }
 
     public function form(Form $form): Form
@@ -83,7 +87,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
                                 $set('empresas', $empresas);
                                 $set('sucursales', $sucursales);
                                 $this->resetPage();
-                                $this->resetProductosData();
+                                $this->markReportStale();
                             }),
                         Select::make('empresas')
                             ->label('Empresas')
@@ -95,7 +99,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
                             ->afterStateUpdated(function (): void {
                                 $this->syncSucursales();
                                 $this->resetPage();
-                                $this->resetProductosData();
+                                $this->markReportStale();
                             }),
                         Select::make('sucursales')
                             ->label('Sucursales')
@@ -109,7 +113,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
                             ->live()
                             ->afterStateUpdated(function (): void {
                                 $this->resetPage();
-                                $this->resetProductosData();
+                                $this->markReportStale();
                             }),
                         Actions::make([
                             FormAction::make('generateReport')
@@ -145,12 +149,19 @@ class ReporteConsolidadoProductos extends Page implements HasForms
     public function generateReport(): void
     {
         $this->resetPage();
-        $this->loadProductos();
+        $this->reportLoaded = true;
+        $this->resetProductosCache();
     }
 
-    protected function resetProductosData(): void
+    protected function markReportStale(): void
     {
-        $this->productos = [];
+        $this->reportLoaded = false;
+        $this->resetProductosCache();
+    }
+
+    protected function resetProductosCache(): void
+    {
+        $this->productosCountCache = null;
     }
 
     protected function syncSucursales(): void
@@ -159,195 +170,6 @@ class ReporteConsolidadoProductos extends Page implements HasForms
         $empresas = $this->filters['empresas'] ?? [];
 
         $this->filters['sucursales'] = $this->buildDefaultSucursalesSelection($conexiones, $empresas);
-    }
-
-    public function loadProductos(): void
-    {
-        $conexiones = $this->filters['conexiones'] ?? [];
-        $empresasSeleccionadas = $this->groupOptionsByConnection($this->filters['empresas'] ?? []);
-        $sucursalesSeleccionadas = $this->groupOptionsByConnection($this->filters['sucursales'] ?? []);
-        $this->resetProductosData();
-
-        if (empty($conexiones)) {
-            return;
-        }
-
-        $connectionNames = Empresa::query()->pluck('nombre_empresa', 'id');
-        $registros = collect();
-
-        foreach ($conexiones as $conexion) {
-            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
-
-            if (empty($empresas)) {
-                continue;
-            }
-
-            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
-            $registros = $registros->merge($this->fetchProductos(
-                $conexion,
-                $empresas,
-                $sucursales,
-                $connectionNames[$conexion] ?? '',
-            ));
-        }
-
-        $this->productos = $this->groupByProducto($registros)->all();
-    }
-
-    protected function fetchProductos(int $conexion, array $empresas, array $sucursales, string $conexionNombre): array
-    {
-        $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
-
-        if (! $connectionName) {
-            return [];
-        }
-
-        $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
-        $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
-
-        try {
-            $rows = DB::connection($connectionName)
-                ->table('saeprod as prod')
-                ->join('saeprbo as prbo', function ($join) {
-                    $join->on('prbo.prbo_cod_prod', '=', 'prod.prod_cod_prod')
-                        ->on('prbo.prbo_cod_empr', '=', 'prod.prod_cod_empr')
-                        ->on('prbo.prbo_cod_sucu', '=', 'prod.prod_cod_sucu');
-                })
-                ->join('saebode as bode', function ($join) {
-                    $join->on('bode.bode_cod_bode', '=', 'prbo.prbo_cod_bode')
-                        ->on('bode.bode_cod_empr', '=', 'prbo.prbo_cod_empr');
-                })
-                ->leftJoin('saesucu as sucu', function ($join) {
-                    $join->on('sucu.sucu_cod_sucu', '=', 'prod.prod_cod_sucu')
-                        ->on('sucu.sucu_cod_empr', '=', 'prod.prod_cod_empr');
-                })
-                ->leftJoin('saeunid as unid', function ($join) {
-                    $join->on('unid.unid_cod_unid', '=', 'prbo.prbo_cod_unid');
-                })
-                ->whereIn('prod.prod_cod_empr', $empresas)
-                ->when(! empty($sucursales), fn($q) => $q->whereIn('prod.prod_cod_sucu', $sucursales))
-                ->select([
-                    'prod.prod_cod_prod',
-                    'prod.prod_nom_prod',
-                    'prod.prod_det_prod',
-                    'prod.prod_des_prod',
-                    'prod.prod_cod_barra',
-                    'prod.prod_cod_empr',
-                    'prod.prod_cod_sucu',
-                    'prbo.prbo_cod_bode',
-                    'prbo.prbo_uco_prod',
-                    'prbo.prbo_iva_porc',
-                    'prbo.prbo_dis_prod',
-                    'prbo.prbo_sma_prod',
-                    'prbo.prbo_smi_prod',
-                    'bode.bode_nom_bode',
-                    'sucu.sucu_nom_sucu',
-                    'unid.unid_nom_unid',
-                    'unid.unid_sigl_unid',
-                ])
-                ->orderBy('prod.prod_nom_prod')
-                ->get();
-        } catch (\Throwable $e) {
-            return [];
-        }
-
-        return $rows
-            ->map(function ($row) use ($conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles) {
-                $empresaCodigo = $row->prod_cod_empr;
-                $sucursalCodigo = $row->prod_cod_sucu;
-
-                return [
-                    'conexion_id' => $conexion,
-                    'conexion_nombre' => $conexionNombre,
-                    'empresa_codigo' => $empresaCodigo,
-                    'empresa_nombre' => $empresasDisponibles[$empresaCodigo] ?? $empresaCodigo,
-                    'sucursal_codigo' => $sucursalCodigo,
-                    'sucursal_nombre' => $row->sucu_nom_sucu ?? ($sucursalesDisponibles[$sucursalCodigo] ?? $sucursalCodigo),
-                    'bodega_codigo' => $row->prbo_cod_bode,
-                    'bodega_nombre' => $row->bode_nom_bode ?? $row->prbo_cod_bode,
-                    'producto_codigo' => $row->prod_cod_prod,
-                    'producto_nombre' => $row->prod_nom_prod,
-                    'producto_descripcion' => $row->prod_det_prod ?: ($row->prod_des_prod ?? ''),
-                    'producto_barra' => $row->prod_cod_barra,
-                    'precio' => (float) ($row->prbo_uco_prod ?? 0),
-                    'iva' => (float) ($row->prbo_iva_porc ?? 0),
-                    'stock' => (float) ($row->prbo_dis_prod ?? 0),
-                    'stock_minimo' => (float) ($row->prbo_smi_prod ?? 0),
-                    'stock_maximo' => (float) ($row->prbo_sma_prod ?? 0),
-                    'unidad' => $row->unid_sigl_unid ?: $row->unid_nom_unid,
-                ];
-            })
-            ->all();
-    }
-
-    protected function groupByProducto(Collection $registros): Collection
-    {
-        $agrupado = [];
-
-        foreach ($registros as $row) {
-            $productoKey = $this->buildProductoKey($row['producto_codigo'] ?? '', $row['producto_nombre'] ?? '');
-
-            if (! isset($agrupado[$productoKey])) {
-                $agrupado[$productoKey] = [
-                    'key' => $productoKey,
-                    'producto_codigo' => (string) ($row['producto_codigo'] ?? ''),
-                    'producto_nombre' => $row['producto_nombre'] ?? null,
-                    'producto_descripcion' => $row['producto_descripcion'] ?? null,
-                    'producto_barra' => $row['producto_barra'] ?? null,
-                    'unidad' => $row['unidad'] ?? null,
-                    'stock_total' => 0,
-                    'precio_promedio' => 0,
-                    'precio_count' => 0,
-                    'precio_total' => 0,
-                    'ubicaciones' => [],
-                ];
-            }
-
-            $agrupado[$productoKey]['stock_total'] += (float) ($row['stock'] ?? 0);
-
-            $precio = (float) ($row['precio'] ?? 0);
-            if ($precio > 0) {
-                $agrupado[$productoKey]['precio_total'] += $precio;
-                $agrupado[$productoKey]['precio_count']++;
-            }
-
-            if (empty($agrupado[$productoKey]['unidad']) && ! empty($row['unidad'])) {
-                $agrupado[$productoKey]['unidad'] = $row['unidad'];
-            }
-
-            $agrupado[$productoKey]['ubicaciones'][] = [
-                'conexion_id' => $row['conexion_id'] ?? null,
-                'conexion_nombre' => $row['conexion_nombre'] ?? null,
-                'empresa_codigo' => $row['empresa_codigo'] ?? null,
-                'empresa_nombre' => $row['empresa_nombre'] ?? null,
-                'sucursal_codigo' => $row['sucursal_codigo'] ?? null,
-                'sucursal_nombre' => $row['sucursal_nombre'] ?? null,
-                'bodega_codigo' => $row['bodega_codigo'] ?? null,
-                'bodega_nombre' => $row['bodega_nombre'] ?? null,
-                'precio' => (float) ($row['precio'] ?? 0),
-                'iva' => (float) ($row['iva'] ?? 0),
-                'stock' => (float) ($row['stock'] ?? 0),
-                'stock_minimo' => (float) ($row['stock_minimo'] ?? 0),
-                'stock_maximo' => (float) ($row['stock_maximo'] ?? 0),
-                'unidad' => $row['unidad'] ?? null,
-            ];
-        }
-
-        foreach ($agrupado as &$producto) {
-            $producto['precio_promedio'] = $producto['precio_count'] > 0
-                ? $producto['precio_total'] / $producto['precio_count']
-                : 0;
-
-            unset($producto['precio_total'], $producto['precio_count']);
-
-            $producto['ubicaciones'] = collect($producto['ubicaciones'])
-                ->sortBy(fn(array $ubicacion) => ($ubicacion['conexion_nombre'] ?? '') . ($ubicacion['empresa_nombre'] ?? '') . ($ubicacion['bodega_nombre'] ?? ''))
-                ->values()
-                ->all();
-        }
-        unset($producto);
-
-        return collect($agrupado)->sortBy('producto_nombre')->values();
     }
 
     protected function buildProductoKey(?string $codigo, ?string $nombre): string
@@ -365,41 +187,6 @@ class ReporteConsolidadoProductos extends Page implements HasForms
         }
 
         return 'prod:' . uniqid('', true);
-    }
-
-    protected function applySearch(Collection $productos): Collection
-    {
-        $termino = trim($this->search ?? '');
-
-        if ($termino === '') {
-            return $productos;
-        }
-
-        $termino = mb_strtolower($termino);
-
-        return $productos->filter(function (array $producto) use ($termino) {
-            $matchesProducto = str_contains(mb_strtolower($producto['producto_nombre'] ?? ''), $termino)
-                || str_contains(mb_strtolower($producto['producto_codigo'] ?? ''), $termino)
-                || str_contains(mb_strtolower($producto['producto_descripcion'] ?? ''), $termino)
-                || str_contains(mb_strtolower($producto['producto_barra'] ?? ''), $termino);
-
-            if ($matchesProducto) {
-                return true;
-            }
-
-            foreach ($producto['ubicaciones'] ?? [] as $ubicacion) {
-                if (
-                    str_contains(mb_strtolower((string) ($ubicacion['conexion_nombre'] ?? '')), $termino)
-                    || str_contains(mb_strtolower((string) ($ubicacion['empresa_nombre'] ?? '')), $termino)
-                    || str_contains(mb_strtolower((string) ($ubicacion['sucursal_nombre'] ?? '')), $termino)
-                    || str_contains(mb_strtolower((string) ($ubicacion['bodega_nombre'] ?? '')), $termino)
-                ) {
-                    return true;
-                }
-            }
-
-            return false;
-        });
     }
 
     protected function applySort(Collection $productos): Collection
@@ -421,33 +208,99 @@ class ReporteConsolidadoProductos extends Page implements HasForms
         );
     }
 
-    protected function getFilteredProductos(): Collection
-    {
-        $productos = collect($this->productos);
-
-        $productos = $this->applySearch($productos);
-
-        return $this->applySort($productos)->values();
-    }
-
     public function getProductosPaginatedProperty(): LengthAwarePaginator
     {
-        $productos = $this->getFilteredProductos();
-
         $page = $this->getPage();
-        $items = $productos->forPage($page, $this->perPage)->values();
+        $perPage = $this->perPage;
+
+        if (! $this->shouldLoadProductos()) {
+            return $this->buildEmptyPaginator($page, $perPage);
+        }
+
+        $conexiones = $this->filters['conexiones'] ?? [];
+        $empresasSeleccionadas = $this->groupOptionsByConnection($this->filters['empresas'] ?? []);
+        $sucursalesSeleccionadas = $this->groupOptionsByConnection($this->filters['sucursales'] ?? []);
+        $connectionNames = Empresa::query()->pluck('nombre_empresa', 'id');
+        $limit = $page * $perPage;
+        $productos = collect();
+
+        foreach ($conexiones as $conexion) {
+            $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
+
+            if (! $connectionName) {
+                continue;
+            }
+
+            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
+
+            if (empty($empresas)) {
+                continue;
+            }
+
+            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
+            $rows = $this->fetchProductosResumen(
+                $connectionName,
+                $empresas,
+                $sucursales,
+                $limit
+            );
+
+            $productos = $productos->merge($rows->map(function ($row) use ($conexion, $connectionNames) {
+                return [
+                    'conexion_id' => $conexion,
+                    'conexion_nombre' => $connectionNames[$conexion] ?? '',
+                    'producto_codigo' => (string) ($row->prod_cod_prod ?? ''),
+                    'producto_nombre' => $row->prod_nom_prod ?? null,
+                    'producto_descripcion' => $row->producto_det ?: ($row->producto_des ?? ''),
+                    'producto_barra' => $row->producto_barra ?? null,
+                    'unidad' => $row->unidad ?? null,
+                    'stock_total' => (float) ($row->stock_total ?? 0),
+                    'precio_total' => (float) ($row->precio_total ?? 0),
+                    'precio_count' => (int) ($row->precio_count ?? 0),
+                ];
+            }));
+        }
+
+        $productos = $this->consolidateProductos($productos);
+        $productos = $this->applySort($productos)->values();
+        $items = $productos->forPage($page, $perPage)->values();
+        $items = $this->attachUbicaciones(
+            $items,
+            $conexiones,
+            $empresasSeleccionadas,
+            $sucursalesSeleccionadas,
+            $connectionNames,
+        );
 
         return new LengthAwarePaginator(
             $items,
-            $productos->count(),
-            $this->perPage,
+            $this->getProductosCountProperty(),
+            $perPage,
             $page
         );
     }
 
     public function getProductosCountProperty(): int
     {
-        return $this->getFilteredProductos()->count();
+        if (! $this->shouldLoadProductos()) {
+            return 0;
+        }
+
+        if ($this->productosCountCache !== null) {
+            return $this->productosCountCache;
+        }
+
+        $conexiones = $this->filters['conexiones'] ?? [];
+        $empresasSeleccionadas = $this->groupOptionsByConnection($this->filters['empresas'] ?? []);
+        $sucursalesSeleccionadas = $this->groupOptionsByConnection($this->filters['sucursales'] ?? []);
+
+        $this->productosCountCache = $this->countUniqueProductos(
+            $conexiones,
+            $empresasSeleccionadas,
+            $sucursalesSeleccionadas
+        );
+
+        return $this->productosCountCache;
     }
 
     public function sortBy(string $field): void
@@ -464,7 +317,7 @@ class ReporteConsolidadoProductos extends Page implements HasForms
 
     protected function exportPdf(string $descripcionReporte)
     {
-        $productos = $this->getFilteredProductos()->values();
+        $productos = $this->getProductosForExport();
 
         if ($productos->isEmpty()) {
             Notification::make()
@@ -482,6 +335,417 @@ class ReporteConsolidadoProductos extends Page implements HasForms
                 'usuario' => Auth::user()?->name,
             ])->setPaper('a4', 'landscape')->stream();
         }, 'reporte-consolidado-productos.pdf');
+    }
+
+    protected function buildEmptyPaginator(int $page, int $perPage): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator(
+            collect(),
+            0,
+            $perPage,
+            $page
+        );
+    }
+
+    protected function shouldLoadProductos(): bool
+    {
+        return $this->reportLoaded && ! empty($this->filters['conexiones'] ?? []);
+    }
+
+    protected function buildProductosQuery(string $connectionName, array $empresas, array $sucursales): Builder
+    {
+        return DB::connection($connectionName)
+            ->table('saeprod as prod')
+            ->join('saeprbo as prbo', function ($join) {
+                $join->on('prbo.prbo_cod_prod', '=', 'prod.prod_cod_prod')
+                    ->on('prbo.prbo_cod_empr', '=', 'prod.prod_cod_empr')
+                    ->on('prbo.prbo_cod_sucu', '=', 'prod.prod_cod_sucu');
+            })
+            ->join('saebode as bode', function ($join) {
+                $join->on('bode.bode_cod_bode', '=', 'prbo.prbo_cod_bode')
+                    ->on('bode.bode_cod_empr', '=', 'prbo.prbo_cod_empr');
+            })
+            ->leftJoin('saesucu as sucu', function ($join) {
+                $join->on('sucu.sucu_cod_sucu', '=', 'prod.prod_cod_sucu')
+                    ->on('sucu.sucu_cod_empr', '=', 'prod.prod_cod_empr');
+            })
+            ->leftJoin('saeunid as unid', function ($join) {
+                $join->on('unid.unid_cod_unid', '=', 'prbo.prbo_cod_unid');
+            })
+            ->whereIn('prod.prod_cod_empr', $empresas)
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('prod.prod_cod_sucu', $sucursales));
+    }
+
+    protected function fetchProductosResumen(
+        string $connectionName,
+        array $empresas,
+        array $sucursales,
+        ?int $limit = null
+    ): Collection {
+        $query = $this->buildProductosQuery($connectionName, $empresas, $sucursales)
+            ->select([
+                'prod.prod_cod_prod',
+                'prod.prod_nom_prod',
+                DB::raw('MAX(prod.prod_det_prod) as producto_det'),
+                DB::raw('MAX(prod.prod_des_prod) as producto_des'),
+                DB::raw('MAX(prod.prod_cod_barra) as producto_barra'),
+                DB::raw('COALESCE(MAX(unid.unid_sigl_unid), MAX(unid.unid_nom_unid)) as unidad'),
+                DB::raw('SUM(prbo.prbo_dis_prod) as stock_total'),
+                DB::raw('SUM(CASE WHEN prbo.prbo_uco_prod > 0 THEN prbo.prbo_uco_prod ELSE 0 END) as precio_total'),
+                DB::raw('SUM(CASE WHEN prbo.prbo_uco_prod > 0 THEN 1 ELSE 0 END) as precio_count'),
+            ])
+            ->groupBy('prod.prod_cod_prod', 'prod.prod_nom_prod');
+
+        $this->applySearchToQuery($query);
+        $this->applySortToQuery($query);
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        return $query->get();
+    }
+
+    protected function applySearchToQuery(Builder $query): void
+    {
+        $termino = trim((string) $this->search);
+
+        if ($termino === '') {
+            return;
+        }
+
+        $termino = mb_strtolower($termino);
+        $like = '%' . $termino . '%';
+
+        $query->where(function ($subQuery) use ($like) {
+            $subQuery
+                ->whereRaw('LOWER(prod.prod_nom_prod) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(prod.prod_cod_prod) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(prod.prod_det_prod) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(prod.prod_des_prod) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(prod.prod_cod_barra) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(bode.bode_nom_bode) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(sucu.sucu_nom_sucu) LIKE ?', [$like]);
+        });
+    }
+
+    protected function applySortToQuery(Builder $query): void
+    {
+        $direction = $this->sortDirection === 'desc' ? 'desc' : 'asc';
+
+        if ($this->sortField === 'producto_codigo') {
+            $query->orderBy('prod.prod_cod_prod', $direction);
+            return;
+        }
+
+        if ($this->sortField === 'stock_total') {
+            $query->orderBy('stock_total', $direction);
+            return;
+        }
+
+        if ($this->sortField === 'precio_promedio') {
+            $query->orderByRaw('CASE WHEN precio_count > 0 THEN precio_total / precio_count ELSE 0 END ' . $direction);
+            return;
+        }
+
+        $query->orderBy('prod.prod_nom_prod', $direction);
+    }
+
+    protected function consolidateProductos(Collection $registros): Collection
+    {
+        $agrupado = [];
+
+        foreach ($registros as $row) {
+            $productoKey = $this->buildProductoKey($row['producto_codigo'] ?? '', $row['producto_nombre'] ?? '');
+
+            if (! isset($agrupado[$productoKey])) {
+                $agrupado[$productoKey] = [
+                    'key' => $productoKey,
+                    'producto_codigo' => (string) ($row['producto_codigo'] ?? ''),
+                    'producto_nombre' => $row['producto_nombre'] ?? null,
+                    'producto_descripcion' => $row['producto_descripcion'] ?? null,
+                    'producto_barra' => $row['producto_barra'] ?? null,
+                    'unidad' => $row['unidad'] ?? null,
+                    'stock_total' => 0,
+                    'precio_total' => 0,
+                    'precio_count' => 0,
+                    'precio_promedio' => 0,
+                    'ubicaciones' => [],
+                ];
+            }
+
+            $agrupado[$productoKey]['stock_total'] += (float) ($row['stock_total'] ?? 0);
+            $agrupado[$productoKey]['precio_total'] += (float) ($row['precio_total'] ?? 0);
+            $agrupado[$productoKey]['precio_count'] += (int) ($row['precio_count'] ?? 0);
+
+            if (empty($agrupado[$productoKey]['producto_descripcion']) && ! empty($row['producto_descripcion'])) {
+                $agrupado[$productoKey]['producto_descripcion'] = $row['producto_descripcion'];
+            }
+
+            if (empty($agrupado[$productoKey]['producto_barra']) && ! empty($row['producto_barra'])) {
+                $agrupado[$productoKey]['producto_barra'] = $row['producto_barra'];
+            }
+
+            if (empty($agrupado[$productoKey]['unidad']) && ! empty($row['unidad'])) {
+                $agrupado[$productoKey]['unidad'] = $row['unidad'];
+            }
+        }
+
+        foreach ($agrupado as &$producto) {
+            $producto['precio_promedio'] = $producto['precio_count'] > 0
+                ? $producto['precio_total'] / $producto['precio_count']
+                : 0;
+
+            unset($producto['precio_total'], $producto['precio_count']);
+        }
+        unset($producto);
+
+        return collect($agrupado)->values();
+    }
+
+    protected function attachUbicaciones(
+        Collection $productos,
+        array $conexiones,
+        array $empresasSeleccionadas,
+        array $sucursalesSeleccionadas,
+        Collection $connectionNames,
+    ): Collection {
+        if ($productos->isEmpty()) {
+            return $productos;
+        }
+
+        $productosPorKey = $productos->keyBy('key')->map(function (array $producto) {
+            $producto['ubicaciones'] = [];
+            return $producto;
+        })->all();
+
+        $codigos = $productos
+            ->pluck('producto_codigo')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $nombres = $productos
+            ->filter(fn(array $producto) => empty($producto['producto_codigo']))
+            ->pluck('producto_nombre')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($conexiones as $conexion) {
+            $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
+
+            if (! $connectionName) {
+                continue;
+            }
+
+            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
+
+            if (empty($empresas)) {
+                continue;
+            }
+
+            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
+            $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
+            $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
+            $ubicaciones = $this->fetchUbicaciones(
+                $connectionName,
+                $empresas,
+                $sucursales,
+                $codigos,
+                $nombres
+            );
+
+            foreach ($ubicaciones as $ubicacion) {
+                $productoKey = $this->buildProductoKey($ubicacion['producto_codigo'] ?? '', $ubicacion['producto_nombre'] ?? '');
+
+                if (! isset($productosPorKey[$productoKey])) {
+                    continue;
+                }
+
+                $empresaCodigo = $ubicacion['empresa_codigo'] ?? null;
+                $sucursalCodigo = $ubicacion['sucursal_codigo'] ?? null;
+
+                $productosPorKey[$productoKey]['ubicaciones'][] = [
+                    'conexion_id' => $conexion,
+                    'conexion_nombre' => $connectionNames[$conexion] ?? '',
+                    'empresa_codigo' => $empresaCodigo,
+                    'empresa_nombre' => $empresasDisponibles[$empresaCodigo] ?? $empresaCodigo,
+                    'sucursal_codigo' => $sucursalCodigo,
+                    'sucursal_nombre' => $ubicacion['sucursal_nombre'] ?? ($sucursalesDisponibles[$sucursalCodigo] ?? $sucursalCodigo),
+                    'bodega_codigo' => $ubicacion['bodega_codigo'] ?? null,
+                    'bodega_nombre' => $ubicacion['bodega_nombre'] ?? ($ubicacion['bodega_codigo'] ?? null),
+                    'precio' => (float) ($ubicacion['precio'] ?? 0),
+                    'iva' => (float) ($ubicacion['iva'] ?? 0),
+                    'stock' => (float) ($ubicacion['stock'] ?? 0),
+                    'stock_minimo' => (float) ($ubicacion['stock_minimo'] ?? 0),
+                    'stock_maximo' => (float) ($ubicacion['stock_maximo'] ?? 0),
+                    'unidad' => $ubicacion['unidad'] ?? null,
+                ];
+            }
+        }
+
+        foreach ($productosPorKey as &$producto) {
+            $producto['ubicaciones'] = collect($producto['ubicaciones'])
+                ->sortBy(fn(array $ubicacion) => ($ubicacion['conexion_nombre'] ?? '') . ($ubicacion['empresa_nombre'] ?? '') . ($ubicacion['bodega_nombre'] ?? ''))
+                ->values()
+                ->all();
+        }
+        unset($producto);
+
+        return collect($productosPorKey)->values();
+    }
+
+    protected function fetchUbicaciones(
+        string $connectionName,
+        array $empresas,
+        array $sucursales,
+        array $codigos,
+        array $nombres
+    ): Collection {
+        if (empty($codigos) && empty($nombres)) {
+            return collect();
+        }
+
+        $query = $this->buildProductosQuery($connectionName, $empresas, $sucursales)
+            ->select([
+                'prod.prod_cod_prod',
+                'prod.prod_nom_prod',
+                'prod.prod_cod_empr',
+                'prod.prod_cod_sucu',
+                'prbo.prbo_cod_bode',
+                'prbo.prbo_uco_prod',
+                'prbo.prbo_iva_porc',
+                'prbo.prbo_dis_prod',
+                'prbo.prbo_sma_prod',
+                'prbo.prbo_smi_prod',
+                'bode.bode_nom_bode',
+                'sucu.sucu_nom_sucu',
+                'unid.unid_nom_unid',
+                'unid.unid_sigl_unid',
+            ])
+            ->where(function ($subQuery) use ($codigos, $nombres) {
+                if (! empty($codigos)) {
+                    $subQuery->whereIn('prod.prod_cod_prod', $codigos);
+                }
+
+                if (! empty($nombres)) {
+                    $subQuery->orWhereIn('prod.prod_nom_prod', $nombres);
+                }
+            })
+            ->orderBy('prod.prod_nom_prod');
+
+        return $query->get()
+            ->map(function ($row) {
+                return [
+                    'empresa_codigo' => $row->prod_cod_empr ?? null,
+                    'sucursal_codigo' => $row->prod_cod_sucu ?? null,
+                    'sucursal_nombre' => $row->sucu_nom_sucu ?? null,
+                    'bodega_codigo' => $row->prbo_cod_bode ?? null,
+                    'bodega_nombre' => $row->bode_nom_bode ?? null,
+                    'producto_codigo' => $row->prod_cod_prod ?? null,
+                    'producto_nombre' => $row->prod_nom_prod ?? null,
+                    'precio' => (float) ($row->prbo_uco_prod ?? 0),
+                    'iva' => (float) ($row->prbo_iva_porc ?? 0),
+                    'stock' => (float) ($row->prbo_dis_prod ?? 0),
+                    'stock_minimo' => (float) ($row->prbo_smi_prod ?? 0),
+                    'stock_maximo' => (float) ($row->prbo_sma_prod ?? 0),
+                    'unidad' => $row->unid_sigl_unid ?: $row->unid_nom_unid,
+                ];
+            });
+    }
+
+    protected function countUniqueProductos(
+        array $conexiones,
+        array $empresasSeleccionadas,
+        array $sucursalesSeleccionadas
+    ): int {
+        $keys = [];
+
+        foreach ($conexiones as $conexion) {
+            $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
+
+            if (! $connectionName) {
+                continue;
+            }
+
+            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
+
+            if (empty($empresas)) {
+                continue;
+            }
+
+            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
+            $query = $this->buildProductosQuery($connectionName, $empresas, $sucursales)
+                ->select(['prod.prod_cod_prod', 'prod.prod_nom_prod'])
+                ->groupBy('prod.prod_cod_prod', 'prod.prod_nom_prod');
+
+            $this->applySearchToQuery($query);
+
+            foreach ($query->cursor() as $row) {
+                $key = $this->buildProductoKey($row->prod_cod_prod ?? '', $row->prod_nom_prod ?? '');
+                $keys[$key] = true;
+            }
+        }
+
+        return count($keys);
+    }
+
+    protected function getProductosForExport(): Collection
+    {
+        if (! $this->shouldLoadProductos()) {
+            return collect();
+        }
+
+        $conexiones = $this->filters['conexiones'] ?? [];
+        $empresasSeleccionadas = $this->groupOptionsByConnection($this->filters['empresas'] ?? []);
+        $sucursalesSeleccionadas = $this->groupOptionsByConnection($this->filters['sucursales'] ?? []);
+        $connectionNames = Empresa::query()->pluck('nombre_empresa', 'id');
+        $productos = collect();
+
+        foreach ($conexiones as $conexion) {
+            $connectionName = SolicitudPagoResource::getExternalConnectionName($conexion);
+
+            if (! $connectionName) {
+                continue;
+            }
+
+            $empresas = $empresasSeleccionadas[$conexion] ?? array_keys(SolicitudPagoResource::getEmpresasOptions($conexion));
+
+            if (empty($empresas)) {
+                continue;
+            }
+
+            $sucursales = $sucursalesSeleccionadas[$conexion] ?? [];
+            $rows = $this->fetchProductosResumen($connectionName, $empresas, $sucursales);
+
+            $productos = $productos->merge($rows->map(function ($row) use ($conexion, $connectionNames) {
+                return [
+                    'conexion_id' => $conexion,
+                    'conexion_nombre' => $connectionNames[$conexion] ?? '',
+                    'producto_codigo' => (string) ($row->prod_cod_prod ?? ''),
+                    'producto_nombre' => $row->prod_nom_prod ?? null,
+                    'producto_descripcion' => $row->producto_det ?: ($row->producto_des ?? ''),
+                    'producto_barra' => $row->producto_barra ?? null,
+                    'unidad' => $row->unidad ?? null,
+                    'stock_total' => (float) ($row->stock_total ?? 0),
+                    'precio_total' => (float) ($row->precio_total ?? 0),
+                    'precio_count' => (int) ($row->precio_count ?? 0),
+                ];
+            }));
+        }
+
+        $productos = $this->consolidateProductos($productos);
+        $productos = $this->applySort($productos)->values();
+
+        return $this->attachUbicaciones(
+            $productos,
+            $conexiones,
+            $empresasSeleccionadas,
+            $sucursalesSeleccionadas,
+            $connectionNames,
+        );
     }
 
     protected function getEmpresasOptionsByConnections(array $conexiones): array
