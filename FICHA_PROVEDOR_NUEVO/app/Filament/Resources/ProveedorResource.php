@@ -763,6 +763,88 @@ class ProveedorResource extends Resource
                     ->color('success')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->filters([
+                Tables\Filters\Filter::make('jireh_context')
+                    ->label('Empresa y sucursal (JIREH)')
+                    ->form([
+                        Forms\Components\Select::make('id_empresa')
+                            ->label('Conexion')
+                            ->options(fn() => Empresa::query()->pluck('nombre_empresa', 'id')->all())
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->required(),
+                        Forms\Components\Select::make('admg_id_empresa')
+                            ->label('Empresa')
+                            ->options(function (Get $get) {
+                                $empresaId = $get('id_empresa');
+                                if (!$empresaId) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saeempr')
+                                        ->pluck('empr_nom_empr', 'empr_cod_empr')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->required(),
+                        Forms\Components\Select::make('admg_id_sucursal')
+                            ->label('Sucursal')
+                            ->options(function (Get $get) {
+                                $empresaId = $get('id_empresa');
+                                $amdgIdEmpresaCode = $get('admg_id_empresa');
+
+                                if (!$empresaId || !$amdgIdEmpresaCode) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saesucu')
+                                        ->where('sucu_cod_empr', $amdgIdEmpresaCode)
+                                        ->pluck('sucu_nom_sucu', 'sucu_cod_sucu')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['id_empresa'] ?? null,
+                                fn(Builder $query, $value): Builder => $query->where('id_empresa', $value),
+                            )
+                            ->when(
+                                $data['admg_id_empresa'] ?? null,
+                                fn(Builder $query, $value): Builder => $query->where('admg_id_empresa', $value),
+                            )
+                            ->when(
+                                $data['admg_id_sucursal'] ?? null,
+                                fn(Builder $query, $value): Builder => $query->where('admg_id_sucursal', $value),
+                            );
+                    }),
+            ])
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
