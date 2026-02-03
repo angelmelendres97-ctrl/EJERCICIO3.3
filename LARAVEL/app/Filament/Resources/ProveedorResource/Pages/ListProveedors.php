@@ -14,6 +14,7 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Resources\Components\Tab;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 
 class ListProveedors extends ListRecords
 {
@@ -22,6 +23,8 @@ class ListProveedors extends ListRecords
     public ?int $jirehConexion = null;
     public ?string $jirehEmpresa = null;
     public ?string $jirehSucursal = null;
+    public bool $jirehSoloVisualizar = false;
+    public array $jirehPreviewRecords = [];
 
     public function getTabs(): array
     {
@@ -52,6 +55,14 @@ class ListProveedors extends ListRecords
                 ->icon('heroicon-o-arrow-path')
                 ->visible(fn($livewire) => $livewire->activeTab === 'jireh')
                 ->form([
+                    Select::make('accion')
+                        ->label('Acción')
+                        ->options([
+                            'insertar' => 'Cargar e insertar',
+                            'visualizar' => 'Visualizar',
+                        ])
+                        ->default('insertar')
+                        ->required(),
                     Select::make('conexion')
                         ->label('Conexión')
                         ->options(Empresa::query()->pluck('nombre_empresa', 'id'))
@@ -106,12 +117,136 @@ class ListProveedors extends ListRecords
                         ->required(),
                 ])
                 ->action(function (array $data): void {
+                    $accion = $data['accion'] ?? 'insertar';
+                    if ($accion === 'visualizar') {
+                        $this->previewJirehProveedores($data);
+                        return;
+                    }
+
                     $this->syncJirehProveedores($data);
                 }),
         ];
     }
 
+    protected function getTableRecords(): Collection
+    {
+        if ($this->activeTab === 'jireh' && $this->jirehSoloVisualizar) {
+            return collect($this->jirehPreviewRecords);
+        }
+
+        return parent::getTableRecords();
+    }
+
+    protected function previewJirehProveedores(array $data): void
+    {
+        [$proveedores, $defaults, $conexionId, $empresaCode, $sucursalCode] = $this->fetchJirehProveedores($data);
+
+        if (!$conexionId || !$empresaCode || !$sucursalCode) {
+            return;
+        }
+
+        $this->jirehPreviewRecords = $proveedores->map(function ($proveedor) use ($defaults, $conexionId, $empresaCode, $sucursalCode) {
+            return Proveedores::make([
+                'id' => "{$conexionId}-{$empresaCode}-{$sucursalCode}-{$proveedor->ruc}",
+                'id_empresa' => $conexionId,
+                'admg_id_empresa' => $empresaCode,
+                'admg_id_sucursal' => $sucursalCode,
+                'ruc' => $proveedor->ruc,
+                'tipo' => $proveedor->tipo_identificacion ?: $defaults['tipo'],
+                'nombre' => $proveedor->nombre,
+                'nombre_comercial' => $proveedor->nombre_comercial ?: $proveedor->nombre,
+                'grupo' => $proveedor->grupo ?: $defaults['grupo'],
+                'zona' => $proveedor->zona ?: $defaults['zona'],
+                'flujo_caja' => $proveedor->flujo_caja ?: $defaults['flujo_caja'],
+                'tipo_proveedor' => $proveedor->tipo_proveedor ?: $defaults['tipo_proveedor'],
+                'forma_pago' => $proveedor->forma_pago ?: $defaults['forma_pago'],
+                'destino_pago' => $proveedor->destino_pago ?: $defaults['destino_pago'],
+                'pais_pago' => $proveedor->pais_pago ?: $defaults['pais_pago'],
+                'dias_pago' => (int) ($proveedor->dias_pago ?? 0),
+                'limite_credito' => (float) ($proveedor->limite_credito ?? 0),
+                'aplica_retencion_sn' => strtoupper((string) $proveedor->aplica_retencion) === 'S',
+                'telefono' => $proveedor->telefono,
+                'direcccion' => $proveedor->direccion,
+                'correo' => $proveedor->correo,
+                'anulada' => strtoupper((string) $proveedor->estado) !== 'A',
+            ]);
+        })->all();
+
+        $this->jirehSoloVisualizar = true;
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+        $this->resetTable();
+
+        Notification::make()
+            ->title("Proveedores JIREH visualizados: {$proveedores->count()}")
+            ->success()
+            ->send();
+    }
+
     protected function syncJirehProveedores(array $data): void
+    {
+        [$proveedores, $defaults, $conexionId, $empresaCode, $sucursalCode] = $this->fetchJirehProveedores($data);
+
+        if (!$conexionId || !$empresaCode || !$sucursalCode) {
+            return;
+        }
+
+        $empresa = Empresa::find($conexionId);
+        $lineaNegocioId = $empresa?->linea_negocio_id;
+        $syncCount = 0;
+
+        foreach ($proveedores as $proveedor) {
+            $local = Proveedores::updateOrCreate(
+                [
+                    'id_empresa' => $conexionId,
+                    'admg_id_empresa' => $empresaCode,
+                    'admg_id_sucursal' => $sucursalCode,
+                    'ruc' => $proveedor->ruc,
+                ],
+                [
+                    'tipo' => $proveedor->tipo_identificacion ?: $defaults['tipo'],
+                    'nombre' => $proveedor->nombre,
+                    'nombre_comercial' => $proveedor->nombre_comercial ?: $proveedor->nombre,
+                    'grupo' => $proveedor->grupo ?: $defaults['grupo'],
+                    'zona' => $proveedor->zona ?: $defaults['zona'],
+                    'flujo_caja' => $proveedor->flujo_caja ?: $defaults['flujo_caja'],
+                    'tipo_proveedor' => $proveedor->tipo_proveedor ?: $defaults['tipo_proveedor'],
+                    'forma_pago' => $proveedor->forma_pago ?: $defaults['forma_pago'],
+                    'destino_pago' => $proveedor->destino_pago ?: $defaults['destino_pago'],
+                    'pais_pago' => $proveedor->pais_pago ?: $defaults['pais_pago'],
+                    'dias_pago' => (int) ($proveedor->dias_pago ?? 0),
+                    'limite_credito' => (float) ($proveedor->limite_credito ?? 0),
+                    'aplica_retencion_sn' => strtoupper((string) $proveedor->aplica_retencion) === 'S',
+                    'telefono' => $proveedor->telefono,
+                    'direcccion' => $proveedor->direccion,
+                    'correo' => $proveedor->correo,
+                    'anulada' => strtoupper((string) $proveedor->estado) !== 'A',
+                ],
+            );
+
+            if ($lineaNegocioId) {
+                $local->lineasNegocio()->syncWithoutDetaching([$lineaNegocioId]);
+            }
+
+            $syncCount++;
+        }
+
+        $this->jirehSoloVisualizar = false;
+        $this->jirehPreviewRecords = [];
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+
+        $this->resetTable();
+
+        Notification::make()
+            ->title("Proveedores JIREH cargados: {$syncCount}")
+            ->success()
+            ->send();
+    }
+
+    protected function fetchJirehProveedores(array $data): array
     {
         $conexionId = (int) ($data['conexion'] ?? 0);
         $empresaCode = $data['empresa'] ?? null;
@@ -122,7 +257,7 @@ class ListProveedors extends ListRecords
                 ->title('Selecciona conexión, empresa y sucursal para continuar.')
                 ->warning()
                 ->send();
-            return;
+            return [collect(), [], 0, null, null];
         }
 
         $connectionName = ProveedorResource::getExternalConnectionName($conexionId);
@@ -131,7 +266,7 @@ class ListProveedors extends ListRecords
                 ->title('No se pudo establecer la conexión con la empresa seleccionada.')
                 ->danger()
                 ->send();
-            return;
+            return [collect(), [], 0, null, null];
         }
 
         $defaults = [
@@ -187,7 +322,7 @@ class ListProveedors extends ListRecords
             })
             ->leftJoin('saegrpv as grpv', function ($join) {
                 $join->on('grpv.grpv_cod_empr', '=', 'clpv.clpv_cod_empr')
-                    ->on('grpv.grpv_cod_grpv', '=', 'clpv.grpv_cod_grpv')
+                    ->on('grpv.grpv_cod_grpv', '=', 'clpv.clpv_cod_grpv')
                     ->where('grpv.grpv_cod_modu', 4);
             })
             ->leftJoin('saezona as zona', function ($join) {
@@ -256,55 +391,7 @@ class ListProveedors extends ListRecords
             )
             ->get();
 
-        $empresa = Empresa::find($conexionId);
-        $lineaNegocioId = $empresa?->linea_negocio_id;
-        $syncCount = 0;
-
-        foreach ($proveedores as $proveedor) {
-            $local = Proveedores::updateOrCreate(
-                [
-                    'id_empresa' => $conexionId,
-                    'admg_id_empresa' => $empresaCode,
-                    'admg_id_sucursal' => $sucursalCode,
-                    'ruc' => $proveedor->ruc,
-                ],
-                [
-                    'tipo' => $proveedor->tipo_identificacion ?: $defaults['tipo'],
-                    'nombre' => $proveedor->nombre,
-                    'nombre_comercial' => $proveedor->nombre_comercial ?: $proveedor->nombre,
-                    'grupo' => $proveedor->grupo ?: $defaults['grupo'],
-                    'zona' => $proveedor->zona ?: $defaults['zona'],
-                    'flujo_caja' => $proveedor->flujo_caja ?: $defaults['flujo_caja'],
-                    'tipo_proveedor' => $proveedor->tipo_proveedor ?: $defaults['tipo_proveedor'],
-                    'forma_pago' => $proveedor->forma_pago ?: $defaults['forma_pago'],
-                    'destino_pago' => $proveedor->destino_pago ?: $defaults['destino_pago'],
-                    'pais_pago' => $proveedor->pais_pago ?: $defaults['pais_pago'],
-                    'dias_pago' => (int) ($proveedor->dias_pago ?? 0),
-                    'limite_credito' => (float) ($proveedor->limite_credito ?? 0),
-                    'aplica_retencion_sn' => strtoupper((string) $proveedor->aplica_retencion) === 'S',
-                    'telefono' => $proveedor->telefono,
-                    'direcccion' => $proveedor->direccion,
-                    'correo' => $proveedor->correo,
-                    'anulada' => strtoupper((string) $proveedor->estado) !== 'A',
-                ],
-            );
-
-            if ($lineaNegocioId) {
-                $local->lineasNegocio()->syncWithoutDetaching([$lineaNegocioId]);
-            }
-
-            $syncCount++;
-        }
-
-        $this->jirehConexion = $conexionId;
-        $this->jirehEmpresa = (string) $empresaCode;
-        $this->jirehSucursal = (string) $sucursalCode;
-
-        $this->resetTable();
-
-        Notification::make()
-            ->title("Proveedores JIREH cargados: {$syncCount}")
-            ->success()
-            ->send();
+        return [$proveedores, $defaults, $conexionId, $empresaCode, $sucursalCode];
     }
+
 }
