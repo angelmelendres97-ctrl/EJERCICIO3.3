@@ -1002,48 +1002,10 @@
             }
         }
 
-        function obtenerPrioridadCargo(cargo) {
-            const nombre = normalizarTexto(cargo && cargo.nombre ? cargo.nombre : '');
-            if (nombre === 'elaborado por') {
-                return 1;
-            }
-            if (nombre === 'solicitado por') {
-                return 2;
-            }
-            return null;
-        }
-
-        function asegurarOrdenCargosPrioritarios() {
-            const prioridades = ['elaborado por', 'solicitado por'];
-            const idsPrioritarios = [];
-
-            prioridades.forEach(function(nombre) {
-                const cargo = gruposAprobadores.find(function(item) {
-                    return normalizarTexto(item.nombre) === nombre;
-                });
-
-                if (cargo) {
-                    idsPrioritarios.push(cargo.id);
-                }
-            });
-
-            if (!idsPrioritarios.length) {
-                return;
-            }
-
-            const restantes = ordenCargosSeleccionados.filter(function(id) {
-                return idsPrioritarios.indexOf(id) === -1;
-            });
-
-            ordenCargosSeleccionados = idsPrioritarios.concat(restantes);
-        }
-
         function ordenarCargosPorPreferencia(cargos) {
             if (!Array.isArray(cargos)) {
                 return [];
             }
-
-            asegurarOrdenCargosPrioritarios();
 
             const mapaOrden = {};
             ordenCargosSeleccionados.forEach(function(id, indice) {
@@ -1051,13 +1013,6 @@
             });
 
             return cargos.slice().sort(function(a, b) {
-                const prioridadA = obtenerPrioridadCargo(a);
-                const prioridadB = obtenerPrioridadCargo(b);
-
-                if (prioridadA !== null || prioridadB !== null) {
-                    return (prioridadA || Number.MAX_SAFE_INTEGER) - (prioridadB || Number.MAX_SAFE_INTEGER);
-                }
-
                 const ordenA = mapaOrden[a.id] || Number.MAX_SAFE_INTEGER;
                 const ordenB = mapaOrden[b.id] || Number.MAX_SAFE_INTEGER;
 
@@ -2024,11 +1979,6 @@
                 } else {
                     aprobadoresDisponibles[indiceSolicitante] = aprobadorSolicitante;
                 }
-                if (!aprobadoresSeleccionados.some(function(item) {
-                        return item.id === aprobadorSolicitante.id;
-                    })) {
-                    aprobadoresSeleccionados.push(aprobadorSolicitante);
-                }
             } else if (!cargoElaboradoPor && aprobadorSolicitante && !avisoCargoElaboradoPorMostrado) {
                 alertSwal('Cree el cargo "Elaborado por" para asignar automáticamente al solicitante', 'info');
                 aprobadoresDisponibles = aprobadoresDisponibles.filter(function(item) {
@@ -2443,12 +2393,7 @@
                     return item.grupoId === cargo.id;
                 });
 
-                if (!seleccion && aprobadoresCargo.length && estadoFormulario === 'creando') {
-                    seleccion = Object.assign({}, aprobadoresCargo[0], {
-                        enviar: true
-                    });
-                    aprobadoresSeleccionados.push(seleccion);
-                } else if (seleccion && typeof seleccion.enviar === 'undefined') {
+                if (seleccion && typeof seleccion.enviar === 'undefined') {
                     seleccion.enviar = true;
                 }
 
@@ -2464,10 +2409,12 @@
                     const seleccionado = id === cargo.id ? 'selected' : '';
                     return '<option value="' + indice + '" ' + seleccionado + '>Posición ' + (indice + 1) + '</option>';
                 }).join('');
-                const opciones = aprobadoresCargo.map(function(aprobador) {
-                    const seleccionado = seleccion && seleccion.id === aprobador.id ? 'selected' : '';
-                    return '<option value="' + aprobador.id + '" ' + seleccionado + '>' + (aprobador.nombre || '') + '</option>';
-                }).join('');
+                const opcionPlaceholder = seleccion ? '' : 'selected';
+                const opciones = '<option value="" ' + opcionPlaceholder + '>Seleccione aprobador</option>' +
+                    aprobadoresCargo.map(function(aprobador) {
+                        const seleccionado = seleccion && seleccion.id === aprobador.id ? 'selected' : '';
+                        return '<option value="' + aprobador.id + '" ' + seleccionado + '>' + (aprobador.nombre || '') + '</option>';
+                    }).join('');
 
                 const descripcionGrupo = cargo.nombre || 'Aprobador';
                 const checkEnvio = seleccion && seleccion.enviar === false ? '' : 'checked';

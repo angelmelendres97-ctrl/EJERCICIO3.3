@@ -5656,7 +5656,7 @@ function reporte_solicitudes($aForm = '')
                          p.pedi_pri_pedi as prioridad_pedido
                   FROM saepedi p
                   $where
-                  ORDER BY 1";
+                  ORDER BY 1 DESC";
 
 
 
