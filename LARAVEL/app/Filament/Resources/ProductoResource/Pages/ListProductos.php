@@ -8,6 +8,7 @@ use App\Models\Producto;
 use App\Models\UnidadMedida;
 use Filament\Actions;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
@@ -52,6 +53,14 @@ class ListProductos extends ListRecords
                 ->icon('heroicon-o-arrow-path')
                 ->visible(fn($livewire) => $livewire->activeTab === 'jireh')
                 ->form([
+                    Radio::make('modo')
+                        ->label('Acción')
+                        ->options([
+                            'insertar' => 'Cargar e insertar',
+                            'visualizar' => 'Visualizar',
+                        ])
+                        ->default('insertar')
+                        ->required(),
                     Select::make('conexion')
                         ->label('Conexión')
                         ->options(Empresa::query()->pluck('nombre_empresa', 'id'))
@@ -106,9 +115,52 @@ class ListProductos extends ListRecords
                         ->required(),
                 ])
                 ->action(function (array $data): void {
+                    if (($data['modo'] ?? 'insertar') === 'visualizar') {
+                        $this->previewJirehProductos($data);
+                        return;
+                    }
+
                     $this->syncJirehProductos($data);
                 }),
         ];
+    }
+
+    protected function previewJirehProductos(array $data): void
+    {
+        $conexionId = (int) ($data['conexion'] ?? 0);
+        $empresaCode = $data['empresa'] ?? null;
+        $sucursalCode = $data['sucursal'] ?? null;
+
+        if (!$conexionId || !$empresaCode || !$sucursalCode) {
+            Notification::make()
+                ->title('Selecciona conexión, empresa y sucursal para continuar.')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        $connectionName = ProductoResource::getExternalConnectionName($conexionId);
+        if (!$connectionName) {
+            Notification::make()
+                ->title('No se pudo establecer la conexión con la empresa seleccionada.')
+                ->danger()
+                ->send();
+            return;
+        }
+
+        $productos = $this->obtenerJirehProductos($connectionName, $empresaCode, $sucursalCode);
+
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+
+        $this->resetTable();
+
+        Notification::make()
+            ->title('Visualización JIREH lista')
+            ->body('Productos encontrados: ' . $productos->count())
+            ->success()
+            ->send();
     }
 
     protected function syncJirehProductos(array $data): void
@@ -134,42 +186,7 @@ class ListProductos extends ListRecords
             return;
         }
 
-        $productos = DB::connection($connectionName)
-            ->table('saeprod as prod')
-            ->join('saeprbo as prbo', function ($join) {
-                $join->on('prbo.prbo_cod_prod', '=', 'prod.prod_cod_prod')
-                    ->on('prbo.prbo_cod_empr', '=', 'prod.prod_cod_empr')
-                    ->on('prbo.prbo_cod_sucu', '=', 'prod.prod_cod_sucu');
-            })
-            ->leftJoin('saeunid as unid', 'unid.unid_cod_unid', '=', 'prbo.prbo_cod_unid')
-            ->where('prod.prod_cod_empr', $empresaCode)
-            ->where('prod.prod_cod_sucu', $sucursalCode)
-            ->select([
-                'prod.prod_cod_prod as sku',
-                'prod.prod_nom_prod as nombre',
-                'prod.prod_det_prod as detalle',
-                'prod.prod_cod_tpro as tipo',
-                'prod.prod_cod_linp as linea',
-                'prod.prod_cod_grpr as grupo',
-                'prod.prod_cod_cate as categoria',
-                'prod.prod_cod_marc as marca',
-                DB::raw('MAX(prbo.prbo_smi_prod) as stock_minimo'),
-                DB::raw('MAX(prbo.prbo_sma_prod) as stock_maximo'),
-                DB::raw('MAX(prbo.prbo_iva_sino) as iva_sn'),
-                DB::raw('MAX(prbo.prbo_iva_porc) as porcentaje_iva'),
-                DB::raw('MAX(unid.unid_nom_unid) as unidad_medida'),
-            ])
-            ->groupBy(
-                'prod.prod_cod_prod',
-                'prod.prod_nom_prod',
-                'prod.prod_det_prod',
-                'prod.prod_cod_tpro',
-                'prod.prod_cod_linp',
-                'prod.prod_cod_grpr',
-                'prod.prod_cod_cate',
-                'prod.prod_cod_marc',
-            )
-            ->get();
+        $productos = $this->obtenerJirehProductos($connectionName, $empresaCode, $sucursalCode);
 
         $empresa = Empresa::find($conexionId);
         $lineaNegocioId = $empresa?->linea_negocio_id;
@@ -231,5 +248,45 @@ class ListProductos extends ListRecords
             ->title("Productos JIREH cargados: {$syncCount}")
             ->success()
             ->send();
+    }
+
+    protected function obtenerJirehProductos(string $connectionName, string $empresaCode, string $sucursalCode)
+    {
+        return DB::connection($connectionName)
+            ->table('saeprod as prod')
+            ->join('saeprbo as prbo', function ($join) {
+                $join->on('prbo.prbo_cod_prod', '=', 'prod.prod_cod_prod')
+                    ->on('prbo.prbo_cod_empr', '=', 'prod.prod_cod_empr')
+                    ->on('prbo.prbo_cod_sucu', '=', 'prod.prod_cod_sucu');
+            })
+            ->leftJoin('saeunid as unid', 'unid.unid_cod_unid', '=', 'prbo.prbo_cod_unid')
+            ->where('prod.prod_cod_empr', $empresaCode)
+            ->where('prod.prod_cod_sucu', $sucursalCode)
+            ->select([
+                'prod.prod_cod_prod as sku',
+                'prod.prod_nom_prod as nombre',
+                'prod.prod_det_prod as detalle',
+                'prod.prod_cod_tpro as tipo',
+                'prod.prod_cod_linp as linea',
+                'prod.prod_cod_grpr as grupo',
+                'prod.prod_cod_cate as categoria',
+                'prod.prod_cod_marc as marca',
+                DB::raw('MAX(prbo.prbo_smi_prod) as stock_minimo'),
+                DB::raw('MAX(prbo.prbo_sma_prod) as stock_maximo'),
+                DB::raw('MAX(prbo.prbo_iva_sino) as iva_sn'),
+                DB::raw('MAX(prbo.prbo_iva_porc) as porcentaje_iva'),
+                DB::raw('MAX(unid.unid_nom_unid) as unidad_medida'),
+            ])
+            ->groupBy(
+                'prod.prod_cod_prod',
+                'prod.prod_nom_prod',
+                'prod.prod_det_prod',
+                'prod.prod_cod_tpro',
+                'prod.prod_cod_linp',
+                'prod.prod_cod_grpr',
+                'prod.prod_cod_cate',
+                'prod.prod_cod_marc',
+            )
+            ->get();
     }
 }
