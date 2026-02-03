@@ -30,6 +30,7 @@ class Proveedores extends Model
         'limite_credito',
         'aplica_retencion_sn',
         'telefono',
+        'correo',
         'direcccion',
         'anulada',
     ];
