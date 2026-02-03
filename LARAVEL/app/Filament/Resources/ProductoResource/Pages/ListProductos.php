@@ -104,14 +104,47 @@ class ListProductos extends ListRecords
                         ->searchable()
                         ->preload()
                         ->required(),
+                    Select::make('modo')
+                        ->label('Acción')
+                        ->options([
+                            'insertar' => 'Cargar e insertar',
+                            'visualizar' => 'Visualizar',
+                        ])
+                        ->default('insertar')
+                        ->required(),
                 ])
                 ->action(function (array $data): void {
+                    $modo = $data['modo'] ?? 'insertar';
+                    if ($modo === 'visualizar') {
+                        $this->visualizarJirehProductos($data);
+                        return;
+                    }
                     $this->syncJirehProductos($data);
                 }),
         ];
     }
 
-    protected function syncJirehProductos(array $data): void
+    protected function visualizarJirehProductos(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
+            return;
+        }
+
+        [$conexionId, $empresaCode, $sucursalCode] = $contexto;
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+
+        $this->resetTable();
+
+        Notification::make()
+            ->title('Registros JIREH listos para visualizar.')
+            ->success()
+            ->send();
+    }
+
+    protected function obtenerContextoJireh(array $data): ?array
     {
         $conexionId = (int) ($data['conexion'] ?? 0);
         $empresaCode = $data['empresa'] ?? null;
@@ -122,7 +155,7 @@ class ListProductos extends ListRecords
                 ->title('Selecciona conexión, empresa y sucursal para continuar.')
                 ->warning()
                 ->send();
-            return;
+            return null;
         }
 
         $connectionName = ProductoResource::getExternalConnectionName($conexionId);
@@ -131,8 +164,20 @@ class ListProductos extends ListRecords
                 ->title('No se pudo establecer la conexión con la empresa seleccionada.')
                 ->danger()
                 ->send();
+            return null;
+        }
+
+        return [$conexionId, $empresaCode, $sucursalCode, $connectionName];
+    }
+
+    protected function syncJirehProductos(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
             return;
         }
+
+        [$conexionId, $empresaCode, $sucursalCode, $connectionName] = $contexto;
 
         $productos = DB::connection($connectionName)
             ->table('saeprod as prod')
