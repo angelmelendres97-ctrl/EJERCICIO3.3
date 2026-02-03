@@ -14,6 +14,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -24,6 +25,8 @@ class ListProductos extends ListRecords
     public ?int $jirehConexion = null;
     public ?string $jirehEmpresa = null;
     public ?string $jirehSucursal = null;
+    public ?string $jirehModo = null;
+    public array $jirehPreviewRecords = [];
 
     public function getTabs(): array
     {
@@ -104,14 +107,49 @@ class ListProductos extends ListRecords
                         ->searchable()
                         ->preload()
                         ->required(),
+                    Select::make('modo')
+                        ->label('Acción')
+                        ->options([
+                            'insertar' => 'Cargar e insertar',
+                            'visualizar' => 'Visualizar',
+                        ])
+                        ->default('insertar')
+                        ->required(),
                 ])
                 ->action(function (array $data): void {
+                    $modo = $data['modo'] ?? 'insertar';
+                    if ($modo === 'visualizar') {
+                        $this->visualizarJirehProductos($data);
+                        return;
+                    }
                     $this->syncJirehProductos($data);
                 }),
         ];
     }
 
-    protected function syncJirehProductos(array $data): void
+    protected function visualizarJirehProductos(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
+            return;
+        }
+
+        [$conexionId, $empresaCode, $sucursalCode, $connectionName] = $contexto;
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+        $this->jirehModo = 'visualizar';
+        $this->jirehPreviewRecords = $this->construirPreviewProductos($connectionName, $conexionId, $empresaCode, $sucursalCode);
+
+        $this->resetTable();
+
+        Notification::make()
+            ->title('Registros JIREH listos para visualizar.')
+            ->success()
+            ->send();
+    }
+
+    protected function obtenerContextoJireh(array $data): ?array
     {
         $conexionId = (int) ($data['conexion'] ?? 0);
         $empresaCode = $data['empresa'] ?? null;
@@ -122,7 +160,7 @@ class ListProductos extends ListRecords
                 ->title('Selecciona conexión, empresa y sucursal para continuar.')
                 ->warning()
                 ->send();
-            return;
+            return null;
         }
 
         $connectionName = ProductoResource::getExternalConnectionName($conexionId);
@@ -131,8 +169,22 @@ class ListProductos extends ListRecords
                 ->title('No se pudo establecer la conexión con la empresa seleccionada.')
                 ->danger()
                 ->send();
+            return null;
+        }
+
+        return [$conexionId, $empresaCode, $sucursalCode, $connectionName];
+    }
+
+    protected function syncJirehProductos(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
             return;
         }
+
+        [$conexionId, $empresaCode, $sucursalCode, $connectionName] = $contexto;
+        $this->jirehModo = 'insertar';
+        $this->jirehPreviewRecords = [];
 
         $productos = DB::connection($connectionName)
             ->table('saeprod as prod')
@@ -231,5 +283,112 @@ class ListProductos extends ListRecords
             ->title("Productos JIREH cargados: {$syncCount}")
             ->success()
             ->send();
+    }
+
+    protected function construirPreviewProductos(string $connectionName, int $conexionId, string $empresaCode, string $sucursalCode): array
+    {
+        $productos = DB::connection($connectionName)
+            ->table('saeprod as prod')
+            ->join('saeprbo as prbo', function ($join) {
+                $join->on('prbo.prbo_cod_prod', '=', 'prod.prod_cod_prod')
+                    ->on('prbo.prbo_cod_empr', '=', 'prod.prod_cod_empr')
+                    ->on('prbo.prbo_cod_sucu', '=', 'prod.prod_cod_sucu');
+            })
+            ->leftJoin('saeunid as unid', 'unid.unid_cod_unid', '=', 'prbo.prbo_cod_unid')
+            ->where('prod.prod_cod_empr', $empresaCode)
+            ->where('prod.prod_cod_sucu', $sucursalCode)
+            ->select([
+                'prod.prod_cod_prod as sku',
+                'prod.prod_nom_prod as nombre',
+                'prod.prod_det_prod as detalle',
+                'prod.prod_cod_tpro as tipo',
+                'prod.prod_cod_linp as linea',
+                'prod.prod_cod_grpr as grupo',
+                'prod.prod_cod_cate as categoria',
+                'prod.prod_cod_marc as marca',
+                DB::raw('MAX(prbo.prbo_smi_prod) as stock_minimo'),
+                DB::raw('MAX(prbo.prbo_sma_prod) as stock_maximo'),
+                DB::raw('MAX(prbo.prbo_iva_sino) as iva_sn'),
+                DB::raw('MAX(prbo.prbo_iva_porc) as porcentaje_iva'),
+                DB::raw('MAX(unid.unid_nom_unid) as unidad_medida'),
+            ])
+            ->groupBy(
+                'prod.prod_cod_prod',
+                'prod.prod_nom_prod',
+                'prod.prod_det_prod',
+                'prod.prod_cod_tpro',
+                'prod.prod_cod_linp',
+                'prod.prod_cod_grpr',
+                'prod.prod_cod_cate',
+                'prod.prod_cod_marc',
+            )
+            ->get();
+
+        $empresa = Empresa::find($conexionId);
+        $unidades = UnidadMedida::query()
+            ->select('id', 'nombre')
+            ->get()
+            ->mapWithKeys(fn($unidad) => [mb_strtoupper($unidad->nombre) => $unidad]);
+
+        return $productos->map(function ($producto) use ($conexionId, $empresaCode, $sucursalCode, $empresa, $unidades) {
+            $unidadNombre = trim((string) ($producto->unidad_medida ?? ''));
+            $unidadKey = mb_strtoupper($unidadNombre);
+            $unidad = $unidadKey !== '' ? ($unidades[$unidadKey] ?? null) : null;
+
+            $modelo = new Producto([
+                'id_empresa' => $conexionId,
+                'amdg_id_empresa' => $empresaCode,
+                'amdg_id_sucursal' => $sucursalCode,
+                'sku' => $producto->sku,
+                'linea' => $producto->linea,
+                'grupo' => $producto->grupo,
+                'categoria' => $producto->categoria,
+                'marca' => $producto->marca,
+                'nombre' => $producto->nombre,
+                'detalle' => $producto->detalle,
+                'tipo' => (int) $producto->tipo,
+                'id_unidad_medida' => $unidad?->id,
+                'stock_minimo' => (float) ($producto->stock_minimo ?? 0),
+                'stock_maximo' => (float) ($producto->stock_maximo ?? 0),
+                'iva_sn' => strtoupper((string) $producto->iva_sn) === 'S',
+                'porcentaje_iva' => (float) ($producto->porcentaje_iva ?? 0),
+            ]);
+
+            if ($empresa) {
+                $modelo->setRelation('empresa', $empresa);
+            }
+            if ($unidad) {
+                $modelo->setRelation('unidadMedida', $unidad);
+            }
+
+            return $modelo;
+        })->all();
+    }
+
+    protected function getTableRecords(): LengthAwarePaginator
+    {
+        if ($this->activeTab === 'jireh' && $this->jirehModo === 'visualizar') {
+            $page = method_exists($this, 'getTablePage') ? (int) $this->getTablePage() : 1;
+            $perPage = method_exists($this, 'getTableRecordsPerPage') ? (int) $this->getTableRecordsPerPage() : 10;
+            $items = collect($this->jirehPreviewRecords);
+            $total = $items->count();
+            $results = $items->forPage($page, $perPage)->values();
+
+            return new LengthAwarePaginator($results, $total, $perPage, $page, [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]);
+        }
+
+        return parent::getTableRecords();
+    }
+
+    protected function getTableRecordsCount(): int
+    {
+        if ($this->activeTab === 'jireh' && $this->jirehModo === 'visualizar') {
+            return count($this->jirehPreviewRecords);
+        }
+
+        return parent::getTableRecordsCount();
     }
 }
