@@ -35,42 +35,45 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Amber,
             ])
             ->navigation(function (NavigationBuilder $navigation) {
-                // Esta es la forma correcta de obtener el usuario autenticado
                 $user = auth()->user();
 
-                if (!$user) {
+                if (! $user) {
                     return $navigation;
                 }
 
-                // Obtener menús según el rol del usuario
-                $menuItems = Menu::whereHas('roles', function ($query) use ($user) {
-                    $query->whereIn('name', $user->roles->pluck('name'));
-                })
-                    ->orWhereDoesntHave('roles')
-                    ->orderBy('grupo')
+                $menuItems = Menu::query()
+                    ->where(function ($q) use ($user) {
+                        $q->whereHas('roles', function ($query) use ($user) {
+                            $query->whereIn('name', $user->roles->pluck('name'));
+                        })->orWhereDoesntHave('roles');
+                    })
+                    ->where('activo', true) // si tienes este campo
+                    ->orderByRaw("COALESCE(NULLIF(TRIM(grupo), ''), 'General') ASC")
                     ->orderBy('orden')
                     ->get();
 
-                $navigationItems = [];
-                foreach ($menuItems as $menuItem) {
-                    $navigationItems[] = \Filament\Navigation\NavigationItem::make($menuItem->nombre)
-                        ->icon($menuItem->icono)
-                        ->url($menuItem->ruta)
-                        ->group($menuItem->grupo ?: 'General')
-                        ->isActiveWhen(fn (): bool => request()->routeIs($menuItem->ruta));
-                }
+                // Agrupar por "grupo" (normalizando espacios)
+                $grouped = $menuItems->groupBy(function ($item) {
+                    $g = trim((string) $item->grupo);
+                    return $g !== '' ? $g : 'General';
+                });
 
-                $groups = $menuItems
-                    ->pluck('grupo')
-                    ->map(fn(?string $grupo) => $grupo ?: 'General')
-                    ->unique()
-                    ->sort()
-                    ->values()
-                    ->map(fn(string $grupo) => NavigationGroup::make($grupo));
+                $navigationGroups = $grouped->map(function ($items, $grupo) {
+                    $navItems = $items->map(function ($menuItem) {
+                        $ruta = $menuItem->ruta; // ej: /admin/reporte...
 
-                return $navigation
-                    ->groups($groups->all())
-                    ->items($navigationItems);
+                        return \Filament\Navigation\NavigationItem::make($menuItem->nombre)
+                            ->icon($menuItem->icono)
+                            ->url(url($ruta))
+                            ->isActiveWhen(fn(): bool => request()->is(ltrim($ruta, '/') . '*'));
+                    })->values()->all();
+
+                    return NavigationGroup::make($grupo)
+                        ->items($navItems);
+                })->values()->all();
+
+                // OJO: aquí NO mandamos ->items(), solo grupos con items dentro
+                return $navigation->groups($navigationGroups);
             })
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
