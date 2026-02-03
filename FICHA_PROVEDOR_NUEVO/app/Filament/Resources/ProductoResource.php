@@ -24,6 +24,7 @@ use Filament\Forms\Components\Placeholder;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\HtmlString;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Set;
 
 
 class ProductoResource extends Resource
@@ -566,7 +567,12 @@ class ProductoResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('unidadMedida.nombre')
                     ->label('Unidad de Medida')
-                    ->searchable(),
+                    ->searchable()
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh'),
+                Tables\Columns\TextColumn::make('unidad_nombre')
+                    ->label('Unidad de Medida')
+                    ->searchable()
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) === 'jireh'),
                 Tables\Columns\TextColumn::make('stock_minimo')
                     ->label('Stock Mínimo')
                     ->numeric()
@@ -588,11 +594,13 @@ class ProductoResource extends Resource
                     ->listWithLineBreaks()
                     ->limitList(3)
                     ->expandableLimitedList()
-                    ->color('success'),
+                    ->color('success')
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh'),
                 Tables\Columns\TextColumn::make('updated_at')
                     ->dateTime()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh'),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('tipo')
@@ -602,12 +610,88 @@ class ProductoResource extends Resource
                     ]),
                 Tables\Filters\TernaryFilter::make('iva_sn')
                     ->label('¿Aplica IVA?'),
+                Tables\Filters\Filter::make('jireh_filters')
+                    ->label('Filtros JIREH')
+                    ->form([
+                        Forms\Components\Select::make('conexion')
+                            ->label('Conexión')
+                            ->options(Empresa::query()->pluck('nombre_empresa', 'id')->all())
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(function (Set $set): void {
+                                $set('empresa', null);
+                                $set('sucursal', null);
+                            })
+                            ->required(),
+                        Forms\Components\Select::make('empresa')
+                            ->label('Empresa')
+                            ->options(function (Get $get): array {
+                                $empresaId = $get('conexion');
+                                if (! $empresaId) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName((int) $empresaId);
+                                if (! $connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saeempr')
+                                        ->pluck('empr_nom_empr', 'empr_cod_empr')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn(Set $set) => $set('sucursal', null))
+                            ->required(),
+                        Forms\Components\Select::make('sucursal')
+                            ->label('Sucursal')
+                            ->options(function (Get $get): array {
+                                $empresaId = $get('conexion');
+                                $empresaCodigo = $get('empresa');
+                                if (! $empresaId || ! $empresaCodigo) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName((int) $empresaId);
+                                if (! $connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saesucu')
+                                        ->where('sucu_cod_empr', $empresaCodigo)
+                                        ->pluck('sucu_nom_sucu', 'sucu_cod_sucu')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required(),
+                    ])
+                    ->query(fn(Builder $query) => $query)
+                    ->hidden(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->visible(fn() => auth()->user()->can('Actualizar')),
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh' && auth()->user()->can('Actualizar')),
+                Tables\Actions\Action::make('editar_jireh')
+                    ->label('Editar')
+                    ->icon('heroicon-o-pencil-square')
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) === 'jireh' && auth()->user()->can('Actualizar'))
+                    ->action(fn($record, $livewire) => $livewire->editJirehProducto($record)),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('Borrar')),
+                    ->visible(fn($livewire) => ($livewire->activeTab ?? null) !== 'jireh' && auth()->user()->can('Borrar')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
