@@ -550,7 +550,6 @@ class ProveedorResource extends Resource
                         ->label('Empresas para replicar')
                         ->options(function (Get $get) {
                             $lineasNegocioIds = $get('lineasNegocio');
-                            $amdgIdEmpresaCode = $get('admg_id_empresa');
                             $ruc = $get('ruc');
 
                             if (empty($lineasNegocioIds)) {
@@ -605,7 +604,6 @@ class ProveedorResource extends Resource
                         ->afterStateHydrated(function (Get $get, callable $set) {
 
                             $lineasNegocioIds = $get('lineasNegocio');
-                            $amdgIdEmpresaCode = $get('admg_id_empresa');
                             $ruc = $get('ruc');
 
                             if (empty($lineasNegocioIds)) {
@@ -633,13 +631,14 @@ class ProveedorResource extends Resource
                                     foreach ($externalEmpresas as $data_empresa) {
 
                                         $optionKey = $empresa->id . '-' . trim($data_empresa->empr_cod_empr);
+                                        $empresaCode = trim($data_empresa->empr_cod_empr);
 
                                         // -------------------------------
                                         // VERIFICACIÓN DE EXISTENCIA
                                         // -------------------------------
                                         $existeProveedor = DB::connection($connectionName)
                                             ->table('saeclpv')
-                                            ->where('clpv_cod_empr', $amdgIdEmpresaCode)
+                                            ->where('clpv_cod_empr', $empresaCode)
                                             ->where('clpv_ruc_clpv', $ruc)
                                             ->where('clpv_clopv_clpv', 'PV') // proveedor
                                             ->exists();

@@ -500,7 +500,7 @@ class ProductoResource extends Resource
                                             ->table('saebode as b')
                                             ->join('saesubo as sb', 'b.bode_cod_bode', '=', 'sb.subo_cod_bode')
                                             ->join('saesucu as s', 'sb.subo_cod_sucu', '=', 's.sucu_cod_sucu')
-                                            ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu', 's.sucu_cod_empr')
+                                            ->select('b.bode_cod_bode', 'b.bode_nom_bode', 's.sucu_nom_sucu', 's.sucu_cod_empr', 's.sucu_cod_sucu')
                                             ->get();
 
                                         foreach ($externalBodegas as $bodega) {
@@ -514,6 +514,7 @@ class ProductoResource extends Resource
                                             $existeProdBode = DB::connection($connectionName)
                                                 ->table('saeprbo')
                                                 ->where('prbo_cod_empr', $bodega->sucu_cod_empr)
+                                                ->where('prbo_cod_sucu', $bodega->sucu_cod_sucu)
                                                 ->where('prbo_cod_bode', trim($bodega->bode_cod_bode))
                                                 ->where('prbo_cod_prod', $sku) // proveedor
                                                 ->exists();
