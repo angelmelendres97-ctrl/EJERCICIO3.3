@@ -672,8 +672,9 @@ class ProveedorResource extends Resource
             ->recordUrl(null)
             ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->columns([
-                Tables\Columns\TextColumn::make('empresa.nombre_empresa')
+                Tables\Columns\TextColumn::make('empresa_nombre')
                     ->label('Empresa')
+                    ->getStateUsing(fn($record) => $record->empresa?->nombre_empresa ?? $record->empresa_nombre ?? null)
                     ->searchable()
                     ->sortable(),
 
@@ -745,6 +746,14 @@ class ProveedorResource extends Resource
                 Tables\Columns\IconColumn::make('aplica_retencion_sn')
                     ->label('Retención')
                     ->boolean()
+                    ->getStateUsing(function ($record) {
+                        $valor = $record->aplica_retencion_sn ?? false;
+                        if (is_string($valor)) {
+                            return strtoupper($valor) === 'S';
+                        }
+
+                        return (bool) $valor;
+                    })
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('anulada')
@@ -754,25 +763,109 @@ class ProveedorResource extends Resource
                     ->color(fn($record) => $record->anulada ? 'danger' : 'success')
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('lineasNegocio.nombre')
+                Tables\Columns\TextColumn::make('lineas_negocio')
                     ->label('Líneas de negocio')
                     ->badge()
+                    ->getStateUsing(function ($record) {
+                        if (isset($record->empresa_nombre)) {
+                            return $record->lineas_negocio ?? [];
+                        }
+
+                        return $record->lineasNegocio?->pluck('nombre')->all() ?? [];
+                    })
                     ->listWithLineBreaks()
                     ->limitList(3)
                     ->expandableLimitedList()
                     ->color('success')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->filters([
+                Tables\Filters\Filter::make('jireh')
+                    ->label('JIREH')
+                    ->form([
+                        Forms\Components\Select::make('conexion')
+                            ->label('Conexión')
+                            ->options(Empresa::query()->pluck('nombre_empresa', 'id')->all())
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn(Forms\Set $set) => $set('empresa', null)),
+                        Forms\Components\Select::make('empresa')
+                            ->label('Empresa')
+                            ->options(function (Forms\Get $get): array {
+                                $empresaId = $get('conexion');
+                                if (!$empresaId) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saeempr')
+                                        ->pluck('empr_nom_empr', 'empr_cod_empr')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn(Forms\Set $set) => $set('sucursal', null)),
+                        Forms\Components\Select::make('sucursal')
+                            ->label('Sucursal')
+                            ->options(function (Forms\Get $get): array {
+                                $empresaId = $get('conexion');
+                                $empresaCodigo = $get('empresa');
+
+                                if (!$empresaId || !$empresaCodigo) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saesucu')
+                                        ->where('sucu_cod_empr', $empresaCodigo)
+                                        ->pluck('sucu_nom_sucu', 'sucu_cod_sucu')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->columns(3)
+                    ->query(fn(Builder $query): Builder => $query)
+                    ->visible(fn($livewire) => $livewire->activeTab === 'jireh'),
+            ])
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
-                    ->visible(fn() => auth()->user()->can('Actualizar')),
+                    ->visible(fn($record, $livewire) => $livewire->activeTab !== 'jireh' && auth()->user()->can('Actualizar')),
+                Tables\Actions\Action::make('editar_jireh')
+                    ->label('Editar')
+                    ->icon('heroicon-o-pencil')
+                    ->visible(fn($record, $livewire) => $livewire->activeTab === 'jireh' && auth()->user()->can('Actualizar'))
+                    ->action(function ($record, $livewire): void {
+                        $proveedor = $livewire->syncJirehProveedorToLocal($record);
+                        $livewire->redirect(ProveedorResource::getUrl('edit', ['record' => $proveedor]));
+                    }),
                 Tables\Actions\Action::make('anular')
                     ->label('Anular')
                     ->color('danger')
                     ->icon('heroicon-o-no-symbol')
                     ->requiresConfirmation()
-                    ->visible(fn() => auth()->user()->can('Actualizar'))
+                    ->visible(fn($record, $livewire) => $livewire->activeTab !== 'jireh' && auth()->user()->can('Actualizar'))
                     ->disabled(fn(Proveedores $record) => $record->anulada)
                     ->action(function (Proveedores $record): void {
                         $record->update(['anulada' => true]);
@@ -784,7 +877,7 @@ class ProveedorResource extends Resource
                     }),
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')
-                    ->visible(fn() => auth()->user()->can('Borrar')),
+                    ->visible(fn($record, $livewire) => $livewire->activeTab !== 'jireh' && auth()->user()->can('Borrar')),
             ])
             ->bulkActions([
                 Tables\Actions\DeleteBulkAction::make()

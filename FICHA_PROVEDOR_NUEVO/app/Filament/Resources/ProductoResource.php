@@ -543,8 +543,9 @@ class ProductoResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('empresa.nombre_empresa')
+                Tables\Columns\TextColumn::make('empresa_nombre')
                     ->label('Empresa')
+                    ->getStateUsing(fn($record) => $record->empresa?->nombre_empresa ?? $record->empresa_nombre ?? null)
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('sku')
@@ -554,18 +555,19 @@ class ProductoResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tipo')
                     ->badge()
-                    ->formatStateUsing(fn(int $state): string => match ($state) {
+                    ->formatStateUsing(fn($state): string => match ((int) $state) {
                         1 => 'Servicio',
                         2 => 'Producto',
                         default => 'Desconocido',
                     })
-                    ->color(fn(int $state): string => match ($state) {
+                    ->color(fn($state): string => match ((int) $state) {
                         1 => 'warning',
                         2 => 'success',
                         default => 'gray',
                     }),
-                Tables\Columns\TextColumn::make('unidadMedida.nombre')
+                Tables\Columns\TextColumn::make('unidad_medida')
                     ->label('Unidad de Medida')
+                    ->getStateUsing(fn($record) => $record->unidadMedida?->nombre ?? $record->unidad_medida ?? null)
                     ->searchable(),
                 Tables\Columns\TextColumn::make('stock_minimo')
                     ->label('Stock Mínimo')
@@ -577,14 +579,29 @@ class ProductoResource extends Resource
                     ->sortable(),
                 Tables\Columns\IconColumn::make('iva_sn')
                     ->label('IVA')
-                    ->boolean(),
+                    ->boolean()
+                    ->getStateUsing(function ($record) {
+                        $iva = $record->iva_sn ?? false;
+                        if (is_string($iva)) {
+                            return strtoupper($iva) === 'S';
+                        }
+
+                        return (bool) $iva;
+                    }),
                 Tables\Columns\TextColumn::make('porcentaje_iva')
                     ->label('IVA (%)')
                     ->numeric(2)
                     ->suffix('%'),
-                Tables\Columns\TextColumn::make('lineasNegocio.nombre')
+                Tables\Columns\TextColumn::make('lineas_negocio')
                     ->badge()
                     ->label('Líneas de Negocio')
+                    ->getStateUsing(function ($record) {
+                        if (isset($record->empresa_nombre)) {
+                            return $record->lineas_negocio ?? [];
+                        }
+
+                        return $record->lineasNegocio?->pluck('nombre')->all() ?? [];
+                    })
                     ->listWithLineBreaks()
                     ->limitList(3)
                     ->expandableLimitedList()
@@ -595,6 +612,73 @@ class ProductoResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                Tables\Filters\Filter::make('jireh')
+                    ->label('JIREH')
+                    ->form([
+                        Forms\Components\Select::make('conexion')
+                            ->label('Conexión')
+                            ->options(Empresa::query()->pluck('nombre_empresa', 'id')->all())
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn(Forms\Set $set) => $set('empresa', null)),
+                        Forms\Components\Select::make('empresa')
+                            ->label('Empresa')
+                            ->options(function (Forms\Get $get): array {
+                                $empresaId = $get('conexion');
+                                if (!$empresaId) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saeempr')
+                                        ->pluck('empr_nom_empr', 'empr_cod_empr')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(fn(Forms\Set $set) => $set('sucursal', null)),
+                        Forms\Components\Select::make('sucursal')
+                            ->label('Sucursal')
+                            ->options(function (Forms\Get $get): array {
+                                $empresaId = $get('conexion');
+                                $empresaCodigo = $get('empresa');
+
+                                if (!$empresaId || !$empresaCodigo) {
+                                    return [];
+                                }
+
+                                $connectionName = self::getExternalConnectionName($empresaId);
+                                if (!$connectionName) {
+                                    return [];
+                                }
+
+                                try {
+                                    return DB::connection($connectionName)
+                                        ->table('saesucu')
+                                        ->where('sucu_cod_empr', $empresaCodigo)
+                                        ->pluck('sucu_nom_sucu', 'sucu_cod_sucu')
+                                        ->all();
+                                } catch (\Exception $e) {
+                                    return [];
+                                }
+                            })
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->columns(3)
+                    ->query(fn(Builder $query): Builder => $query)
+                    ->visible(fn($livewire) => $livewire->activeTab === 'jireh'),
                 Tables\Filters\SelectFilter::make('tipo')
                     ->options([
                         1 => 'Servicio',
@@ -605,9 +689,17 @@ class ProductoResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
-                    ->visible(fn() => auth()->user()->can('Actualizar')),
+                    ->visible(fn($record, $livewire) => $livewire->activeTab !== 'jireh' && auth()->user()->can('Actualizar')),
+                Tables\Actions\Action::make('editar_jireh')
+                    ->label('Editar')
+                    ->icon('heroicon-o-pencil')
+                    ->visible(fn($record, $livewire) => $livewire->activeTab === 'jireh' && auth()->user()->can('Actualizar'))
+                    ->action(function ($record, $livewire): void {
+                        $producto = $livewire->syncJirehProductoToLocal($record);
+                        $livewire->redirect(ProductoResource::getUrl('edit', ['record' => $producto]));
+                    }),
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn() => auth()->user()->can('Borrar')),
+                    ->visible(fn($record, $livewire) => $livewire->activeTab !== 'jireh' && auth()->user()->can('Borrar')),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
