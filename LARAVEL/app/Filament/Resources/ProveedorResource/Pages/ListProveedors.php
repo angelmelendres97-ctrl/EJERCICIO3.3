@@ -13,6 +13,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Resources\Components\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 class ListProveedors extends ListRecords
@@ -22,6 +23,7 @@ class ListProveedors extends ListRecords
     public ?int $jirehConexion = null;
     public ?string $jirehEmpresa = null;
     public ?string $jirehSucursal = null;
+    public ?string $jirehModo = null;
 
     public function getTabs(): array
     {
@@ -104,14 +106,66 @@ class ListProveedors extends ListRecords
                         ->searchable()
                         ->preload()
                         ->required(),
+                    Select::make('modo')
+                        ->label('Acción')
+                        ->options([
+                            'insertar' => 'Cargar e insertar',
+                            'visualizar' => 'Visualizar',
+                        ])
+                        ->default('insertar')
+                        ->required(),
                 ])
                 ->action(function (array $data): void {
+                    $modo = $data['modo'] ?? 'insertar';
+                    if ($modo === 'visualizar') {
+                        $this->visualizarJirehProveedores($data);
+                        return;
+                    }
                     $this->syncJirehProveedores($data);
                 }),
         ];
     }
 
-    protected function syncJirehProveedores(array $data): void
+    protected function getTableRecordKey($record): string
+    {
+        if ($this->activeTab === 'jireh' && $this->jirehModo === 'visualizar' && $record instanceof Proveedores) {
+            return 'jireh-' . ($record->ruc ?? uniqid('', true)) . '-' . ($record->admg_id_empresa ?? '') . '-' . ($record->admg_id_sucursal ?? '');
+        }
+
+        return parent::getTableRecordKey($record);
+    }
+
+    protected function getTableRecords(): LengthAwarePaginator
+    {
+        if ($this->activeTab === 'jireh' && $this->jirehModo === 'visualizar') {
+            return $this->obtenerRegistrosVisualizacionJireh();
+        }
+
+        return parent::getTableRecords();
+    }
+
+    protected function visualizarJirehProveedores(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
+            return;
+        }
+
+        [$conexionId, $empresaCode, $sucursalCode] = $contexto;
+        $this->jirehConexion = $conexionId;
+        $this->jirehEmpresa = (string) $empresaCode;
+        $this->jirehSucursal = (string) $sucursalCode;
+        $this->jirehModo = 'visualizar';
+
+        $this->resetTable();
+
+        Notification::make()
+            ->title('Registros JIREH listos para visualizar.')
+            ->success()
+            ->send();
+    }
+
+    protected function obtenerContextoJireh(array $data): ?array
     {
         $conexionId = (int) ($data['conexion'] ?? 0);
         $empresaCode = $data['empresa'] ?? null;
@@ -122,7 +176,7 @@ class ListProveedors extends ListRecords
                 ->title('Selecciona conexión, empresa y sucursal para continuar.')
                 ->warning()
                 ->send();
-            return;
+            return null;
         }
 
         $connectionName = ProveedorResource::getExternalConnectionName($conexionId);
@@ -131,8 +185,165 @@ class ListProveedors extends ListRecords
                 ->title('No se pudo establecer la conexión con la empresa seleccionada.')
                 ->danger()
                 ->send();
+            return null;
+        }
+
+        return [$conexionId, $empresaCode, $sucursalCode, $connectionName];
+    }
+
+    protected function obtenerRegistrosVisualizacionJireh(): LengthAwarePaginator
+    {
+        $conexionId = $this->jirehConexion;
+        $empresaCode = $this->jirehEmpresa;
+        $sucursalCode = $this->jirehSucursal;
+
+        if (!$conexionId || !$empresaCode || !$sucursalCode) {
+            return new LengthAwarePaginator([], 0, $this->getTableRecordsPerPage(), $this->getTablePage());
+        }
+
+        $connectionName = ProveedorResource::getExternalConnectionName((int) $conexionId);
+        if (!$connectionName) {
+            return new LengthAwarePaginator([], 0, $this->getTableRecordsPerPage(), $this->getTablePage());
+        }
+
+        $proveedores = DB::connection($connectionName)
+            ->table('saeclpv as clpv')
+            ->leftJoin('saetlcp as tlcp', function ($join) {
+                $join->on('tlcp.tlcp_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('tlcp.tlcp_cod_sucu', '=', 'clpv.clpv_cod_sucu')
+                    ->on('tlcp.tlcp_cod_clpv', '=', 'clpv.clpv_cod_clpv');
+            })
+            ->leftJoin('saeemai as emai', function ($join) {
+                $join->on('emai.emai_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('emai.emai_cod_sucu', '=', 'clpv.clpv_cod_sucu')
+                    ->on('emai.emai_cod_clpv', '=', 'clpv.clpv_cod_clpv');
+            })
+            ->leftJoin('saedire as dire', function ($join) {
+                $join->on('dire.dire_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('dire.dire_cod_sucu', '=', 'clpv.clpv_cod_sucu')
+                    ->on('dire.dire_cod_clpv', '=', 'clpv.clpv_cod_clpv');
+            })
+            ->leftJoin('saegrpv as grpv', function ($join) {
+                $join->on('grpv.grpv_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('grpv.grpv_cod_grpv', '=', 'clpv.clpv_cod_grpv')
+                    ->where('grpv.grpv_cod_modu', 4);
+            })
+            ->leftJoin('saezona as zona', function ($join) {
+                $join->on('zona.zona_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('zona.zona_cod_zona', '=', 'clpv.clpv_cod_zona');
+            })
+            ->leftJoin('saecact as cact', function ($join) {
+                $join->on('cact.cact_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('cact.cact_cod_cact', '=', 'clpv.clpv_cod_cact');
+            })
+            ->leftJoin('saetprov as tprov', function ($join) {
+                $join->on('tprov.tprov_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('tprov.tprov_cod_tprov', '=', 'clpv.clpv_cod_tprov');
+            })
+            ->leftJoin('saefpagop as fpagop', function ($join) {
+                $join->on('fpagop.fpagop_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('fpagop.fpagop_cod_fpagop', '=', 'clpv.clpv_cod_fpagop');
+            })
+            ->leftJoin('saetpago as tpago', function ($join) {
+                $join->on('tpago.tpago_cod_empr', '=', 'clpv.clpv_cod_empr')
+                    ->on('tpago.tpago_cod_tpago', '=', 'clpv.clpv_cod_tpago');
+            })
+            ->leftJoin('saepaisp as paisp', 'paisp.paisp_cod_paisp', '=', 'clpv.clpv_cod_paisp')
+            ->leftJoin('comercial.tipo_iden_clpv as tipo', 'tipo.tipo', '=', 'clpv.clv_con_clpv')
+            ->where('clpv.clpv_cod_empr', $empresaCode)
+            ->where('clpv.clpv_cod_sucu', $sucursalCode)
+            ->where('clpv.clpv_clopv_clpv', 'PV')
+            ->select([
+                'clpv.clpv_cod_clpv',
+                'clpv.clpv_ruc_clpv as ruc',
+                'clpv.clpv_nom_clpv as nombre',
+                'clpv.clpv_nom_come as nombre_comercial',
+                'clpv.clpv_ret_sn as aplica_retencion',
+                'clpv.clpv_est_clpv as estado',
+                'clpv.clpv_pro_pago as dias_pago',
+                'clpv.clpv_lim_cred as limite_credito',
+                'tipo.identificacion as tipo_identificacion',
+                'grpv.grpv_nom_grpv as grupo',
+                'zona.zona_nom_zona as zona',
+                'cact.cact_nom_cact as flujo_caja',
+                'tprov.tprov_des_tprov as tipo_proveedor',
+                'fpagop.fpagop_des_fpagop as forma_pago',
+                'tpago.tpago_des_tpago as destino_pago',
+                'paisp.paisp_des_paisp as pais_pago',
+                DB::raw('MAX(tlcp.tlcp_tlf_tlcp) as telefono'),
+                DB::raw('MAX(emai.emai_ema_emai) as correo'),
+                DB::raw('MAX(dire.dire_dir_dire) as direccion'),
+            ])
+            ->groupBy(
+                'clpv.clpv_cod_clpv',
+                'clpv.clpv_ruc_clpv',
+                'clpv.clpv_nom_clpv',
+                'clpv.clpv_nom_come',
+                'clpv.clpv_ret_sn',
+                'clpv.clpv_est_clpv',
+                'clpv.clpv_pro_pago',
+                'clpv.clpv_lim_cred',
+                'tipo.identificacion',
+                'grpv.grpv_nom_grpv',
+                'zona.zona_nom_zona',
+                'cact.cact_nom_cact',
+                'tprov.tprov_des_tprov',
+                'fpagop.fpagop_des_fpagop',
+                'tpago.tpago_des_tpago',
+                'paisp.paisp_des_paisp',
+            )
+            ->get()
+            ->map(function ($proveedor) use ($conexionId, $empresaCode, $sucursalCode) {
+                return Proveedores::make([
+                    'id_empresa' => $conexionId,
+                    'admg_id_empresa' => $empresaCode,
+                    'admg_id_sucursal' => $sucursalCode,
+                    'ruc' => $proveedor->ruc,
+                    'tipo' => $proveedor->tipo_identificacion,
+                    'nombre' => $proveedor->nombre,
+                    'nombre_comercial' => $proveedor->nombre_comercial ?: $proveedor->nombre,
+                    'grupo' => $proveedor->grupo,
+                    'zona' => $proveedor->zona,
+                    'flujo_caja' => $proveedor->flujo_caja,
+                    'tipo_proveedor' => $proveedor->tipo_proveedor,
+                    'forma_pago' => $proveedor->forma_pago,
+                    'destino_pago' => $proveedor->destino_pago,
+                    'pais_pago' => $proveedor->pais_pago,
+                    'dias_pago' => (int) ($proveedor->dias_pago ?? 0),
+                    'limite_credito' => (float) ($proveedor->limite_credito ?? 0),
+                    'aplica_retencion_sn' => strtoupper((string) $proveedor->aplica_retencion) === 'S',
+                    'telefono' => $proveedor->telefono,
+                    'direcccion' => $proveedor->direccion,
+                    'correo' => $proveedor->correo,
+                    'anulada' => strtoupper((string) $proveedor->estado) !== 'A',
+                ]);
+            })
+            ->values();
+
+        $page = $this->getTablePage();
+        $perPage = $this->getTableRecordsPerPage();
+        $paginated = $proveedores->forPage($page, $perPage)->values();
+
+        return new LengthAwarePaginator(
+            $paginated,
+            $proveedores->count(),
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ],
+        );
+    }
+
+    protected function syncJirehProveedores(array $data): void
+    {
+        $contexto = $this->obtenerContextoJireh($data);
+        if (!$contexto) {
             return;
         }
+
+        [$conexionId, $empresaCode, $sucursalCode, $connectionName] = $contexto;
 
         $defaults = [
             'tipo' => DB::connection($connectionName)
@@ -299,6 +510,7 @@ class ListProveedors extends ListRecords
         $this->jirehConexion = $conexionId;
         $this->jirehEmpresa = (string) $empresaCode;
         $this->jirehSucursal = (string) $sucursalCode;
+        $this->jirehModo = 'insertar';
 
         $this->resetTable();
 
