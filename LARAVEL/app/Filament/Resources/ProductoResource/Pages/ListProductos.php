@@ -48,7 +48,7 @@ class ListProductos extends ListRecords
         return [
             Actions\CreateAction::make(),
             Action::make('cargarJireh')
-                ->label('Cargar JIREH')
+                ->label('Sincronizar con JIREH')
                 ->icon('heroicon-o-arrow-path')
                 ->visible(fn($livewire) => $livewire->activeTab === 'jireh')
                 ->form([

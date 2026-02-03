@@ -127,6 +127,7 @@ class ProveedorSyncService
                 // 5. Buscar o crear/actualizar saeclpv
                 $existeProveedor = DB::connection($conexionPgsql)->table('saeclpv')
                     ->where('clpv_cod_empr', $admg_empresa)
+                    ->where('clpv_cod_sucu', $admg_sucursal)
                     ->where('clpv_ruc_clpv', $identificacion)
                     ->where('clv_con_clpv', $id_iden_clpv)
                     ->where('clpv_clopv_clpv', 'PV')
@@ -237,18 +238,25 @@ class ProveedorSyncService
                 }
 
                 DB::connection($conexionPgsql)->commit();
-            } catch (Exception $e) {
-                if ($conexionPgsql && DB::connection($conexionPgsql)->inTransaction()) {
-                    DB::connection($conexionPgsql)->rollBack();
+            } catch (\Throwable $e) {
+                if ($conexionPgsql) {
+                    $conn = DB::connection($conexionPgsql);
+
+                    if ($conn->transactionLevel() > 0) {
+                        $conn->rollBack();
+                    }
                 }
 
-                // Asegúrate de que $empresa está definido antes de intentar acceder a sus propiedades
-                $nombreEmpresa = $empresa ? $empresa->nombre_empresa : 'Desconocida';
+                $nombreEmpresa = $empresa?->nombre_empresa ?? 'Desconocida';
+                Log::error("Error al sincronizar proveedor en empresa {$nombreEmpresa}: {$e->getMessage()}", [
+                    'empresa_id' => $empresaId,
+                    'conexion'   => $conexionPgsql,
+                ]);
 
-                Log::error("Error al sincronizar proveedor en empresa {$nombreEmpresa}: " . $e->getMessage());
-
-                // Relanzar la excepción para que Filament pueda mostrar un error
-                throw new Exception("No se pudo sincronizar el proveedor en la base de datos externa: {$nombreEmpresa}. Se ha revertido la operación. Error: " . $e->getMessage());
+                throw new Exception(
+                    "No se pudo sincronizar el proveedor en la base de datos externa: {$nombreEmpresa}. Error: " . $e->getMessage(),
+                    previous: $e
+                );
             }
         }
     }
