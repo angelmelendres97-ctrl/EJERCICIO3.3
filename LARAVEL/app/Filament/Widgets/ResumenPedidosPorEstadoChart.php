@@ -49,8 +49,6 @@ class ResumenPedidosPorEstadoChart extends ChartWidget
         $labels = [];
         $values = [];
         $colors = [];
-        $palette = ['#2563eb', '#f97316', '#22c55e', '#ef4444', '#6366f1', '#f59e0b', '#14b8a6', '#ec4899'];
-        $colorIndex = 0;
 
         foreach ($presupuestos as $presupuestoLabel) {
             $presupuestoValue = $presupuestoLabel === 'Sin presupuesto' ? null : $presupuestoLabel;
@@ -65,8 +63,7 @@ class ResumenPedidosPorEstadoChart extends ChartWidget
 
                 $labels[] = $presupuestoLabel . ' · ' . $status['label'];
                 $values[] = $query->where('anulada', $status['value'])->count();
-                $colors[] = $palette[$colorIndex % count($palette)];
-                $colorIndex++;
+                $colors[] = $this->resolvePresupuestoColor($presupuestoValue, $status['value']);
             }
         }
 
@@ -80,5 +77,18 @@ class ResumenPedidosPorEstadoChart extends ChartWidget
             ],
             'labels' => $labels,
         ];
+    }
+
+    private function resolvePresupuestoColor(?string $presupuesto, bool $anulada): string
+    {
+        if ($presupuesto === 'AZ') {
+            return $anulada ? '#ef4444' : '#2563eb';
+        }
+
+        if ($presupuesto === 'PB') {
+            return $anulada ? '#f59e0b' : '#22c55e';
+        }
+
+        return $anulada ? '#f97316' : '#9ca3af';
     }
 }

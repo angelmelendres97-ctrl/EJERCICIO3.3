@@ -112,6 +112,18 @@
         </div>
 
         <x-filament::section>
+            <x-slot name="heading">Órdenes de compra por empresa, sucursal y fecha</x-slot>
+            <x-slot name="description">Agrupadas por empresa, sucursal y fecha según el periodo seleccionado.</x-slot>
+            <div class="relative h-72"
+                wire:key="ordenes-empresa-sucursal-fecha-{{ $selectedMonth }}-{{ $selectedYear }}">
+                <div x-data="chartRenderer(@js($this->ordenCompraEmpresaSucursalFechaChartData), 'bar')"
+                    x-init="init()" class="h-full">
+                    <canvas x-ref="canvas" class="h-full w-full"></canvas>
+                </div>
+            </div>
+        </x-filament::section>
+
+        <x-filament::section>
             <x-slot name="heading">Resúmenes por empresa</x-slot>
             <div class="relative h-72" wire:key="resumenes-empresa-{{ $selectedMonth }}-{{ $selectedYear }}">
                 <div x-data="chartRenderer(@js($this->resumenEmpresaChartData), 'bar')" x-init="init()" class="h-full">

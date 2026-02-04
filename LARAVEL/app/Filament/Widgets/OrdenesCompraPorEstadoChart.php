@@ -49,8 +49,6 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
         $labels = [];
         $values = [];
         $colors = [];
-        $palette = ['#10b981', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899'];
-        $colorIndex = 0;
 
         foreach ($presupuestos as $presupuestoLabel) {
             $presupuestoValue = $presupuestoLabel === 'Sin presupuesto' ? null : $presupuestoLabel;
@@ -65,8 +63,7 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
 
                 $labels[] = $presupuestoLabel . ' · ' . $status['label'];
                 $values[] = $query->where('anulada', $status['value'])->count();
-                $colors[] = $palette[$colorIndex % count($palette)];
-                $colorIndex++;
+                $colors[] = $this->resolvePresupuestoColor($presupuestoValue, $status['value']);
             }
         }
 
@@ -80,5 +77,18 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
             ],
             'labels' => $labels,
         ];
+    }
+
+    private function resolvePresupuestoColor(?string $presupuesto, bool $anulada): string
+    {
+        if ($presupuesto === 'AZ') {
+            return $anulada ? '#ef4444' : '#2563eb';
+        }
+
+        if ($presupuesto === 'PB') {
+            return $anulada ? '#f59e0b' : '#22c55e';
+        }
+
+        return $anulada ? '#f97316' : '#9ca3af';
     }
 }
