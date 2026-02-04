@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Widgets\OrdenesCompraPorEstadoChart;
+use App\Filament\Widgets\OrdenesCompraPorEmpresaSucursalFechaChart;
 use App\Filament\Widgets\OrdenesCompraTotalPorEmpresaChart;
 use App\Filament\Widgets\ResumenPedidosPorEstadoChart;
 use App\Filament\Widgets\ResumenPedidosPorEmpresaChart;
@@ -26,6 +27,7 @@ class Dashboard extends BaseDashboard
         return [
             /* UsuariosPorRolChart::class, */
             OrdenesCompraPorEstadoChart::class,
+            OrdenesCompraPorEmpresaSucursalFechaChart::class,
             OrdenesCompraTotalPorEmpresaChart::class,
             ResumenPedidosPorEstadoChart::class,
             ResumenPedidosPorEmpresaChart::class,

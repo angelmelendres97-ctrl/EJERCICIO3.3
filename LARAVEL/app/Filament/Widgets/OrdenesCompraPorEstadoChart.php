@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Filament\Widgets\Concerns\HasMonthYearFilters;
 use App\Models\OrdenCompra;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Support\Str;
 
 class OrdenesCompraPorEstadoChart extends ChartWidget
 {
@@ -49,8 +50,6 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
         $labels = [];
         $values = [];
         $colors = [];
-        $palette = ['#10b981', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899'];
-        $colorIndex = 0;
 
         foreach ($presupuestos as $presupuestoLabel) {
             $presupuestoValue = $presupuestoLabel === 'Sin presupuesto' ? null : $presupuestoLabel;
@@ -65,8 +64,7 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
 
                 $labels[] = $presupuestoLabel . ' · ' . $status['label'];
                 $values[] = $query->where('anulada', $status['value'])->count();
-                $colors[] = $palette[$colorIndex % count($palette)];
-                $colorIndex++;
+                $colors[] = $this->resolveStatusColor($presupuestoLabel, $status['value']);
             }
         }
 
@@ -80,5 +78,24 @@ class OrdenesCompraPorEstadoChart extends ChartWidget
             ],
             'labels' => $labels,
         ];
+    }
+
+    private function resolveStatusColor(string $presupuestoLabel, bool $isCancelled): string
+    {
+        $normalized = Str::upper(trim($presupuestoLabel));
+
+        if (Str::startsWith($normalized, 'AZ')) {
+            return $isCancelled ? '#ef4444' : '#2563eb';
+        }
+
+        if (Str::startsWith($normalized, 'PB')) {
+            return $isCancelled ? '#f59e0b' : '#22c55e';
+        }
+
+        if ($normalized === 'SIN PRESUPUESTO') {
+            return '#9ca3af';
+        }
+
+        return $isCancelled ? '#f97316' : '#64748b';
     }
 }

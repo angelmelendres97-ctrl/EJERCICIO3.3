@@ -12,6 +12,7 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\ActionsPosition;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -544,13 +545,14 @@ class ProductoResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('sku')
+                    ->label('Código')
+                    ->searchable()
+                    ->extraAttributes(['class' => 'font-semibold']),
                 Tables\Columns\TextColumn::make('empresa.nombre_empresa')
                     ->label('Empresa')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('sku')
-                    ->label('SKU')
-                    ->searchable(),
                 Tables\Columns\TextColumn::make('nombre')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tipo')
@@ -610,6 +612,7 @@ class ProductoResource extends Resource
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn() => auth()->user()->can('Borrar')),
             ])
+            ->actionsPosition(ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
