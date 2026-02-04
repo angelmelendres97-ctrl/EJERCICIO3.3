@@ -543,14 +543,17 @@ class ProductoResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->actionsPosition(\Filament\Tables\Enums\ActionsPosition::BeforeColumns)
             ->columns([
+                Tables\Columns\TextColumn::make('sku')
+                    ->label('Código')
+                    ->weight('bold')
+                    ->searchable(isIndividual: true)
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('empresa.nombre_empresa')
                     ->label('Empresa')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('sku')
-                    ->label('SKU')
-                    ->searchable(),
                 Tables\Columns\TextColumn::make('nombre')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tipo')
