@@ -13,7 +13,6 @@ use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -21,25 +20,11 @@ class ListProductos extends ListRecords
 {
     protected static string $resource = ProductoResource::class;
 
-    public ?int $jirehConexion = null;
-    public ?string $jirehEmpresa = null;
-    public ?string $jirehSucursal = null;
 
     public function getTabs(): array
     {
         return [
             'locales' => Tab::make('Locales'),
-            'jireh' => Tab::make('JIREH')
-                ->modifyQueryUsing(function (Builder $query): Builder {
-                    if (!$this->jirehConexion || !$this->jirehEmpresa || !$this->jirehSucursal) {
-                        return $query->whereRaw('1 = 0');
-                    }
-
-                    return $query
-                        ->where('id_empresa', $this->jirehConexion)
-                        ->where('amdg_id_empresa', $this->jirehEmpresa)
-                        ->where('amdg_id_sucursal', $this->jirehSucursal);
-                }),
         ];
     }
 
@@ -50,7 +35,7 @@ class ListProductos extends ListRecords
             Action::make('cargarJireh')
                 ->label('Sincronizar con JIREH')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn($livewire) => $livewire->activeTab === 'jireh')
+                ->visible(fn() => auth()->user()?->hasRole('ADMINISTRADOR') ?? false)
                 ->form([
                     Select::make('conexion')
                         ->label('Conexión')
@@ -220,10 +205,6 @@ class ListProductos extends ListRecords
 
             $syncCount++;
         }
-
-        $this->jirehConexion = $conexionId;
-        $this->jirehEmpresa = (string) $empresaCode;
-        $this->jirehSucursal = (string) $sucursalCode;
 
         $this->resetTable();
 

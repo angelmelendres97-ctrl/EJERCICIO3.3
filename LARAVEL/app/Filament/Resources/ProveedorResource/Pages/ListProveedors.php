@@ -19,9 +19,6 @@ class ListProveedors extends ListRecords
 {
     protected static string $resource = ProveedorResource::class;
 
-    public ?int $jirehConexion = null;
-    public ?string $jirehEmpresa = null;
-    public ?string $jirehSucursal = null;
 
     public function getTabs(): array
     {
@@ -30,17 +27,6 @@ class ListProveedors extends ListRecords
                 ->modifyQueryUsing(fn(Builder $query) => $query->where('anulada', false)),
             'anuladas' => Tab::make('Anuladas')
                 ->modifyQueryUsing(fn(Builder $query) => $query->where('anulada', true)),
-            'jireh' => Tab::make('JIREH')
-                ->modifyQueryUsing(function (Builder $query): Builder {
-                    if (!$this->jirehConexion || !$this->jirehEmpresa || !$this->jirehSucursal) {
-                        return $query->whereRaw('1 = 0');
-                    }
-
-                    return $query
-                        ->where('id_empresa', $this->jirehConexion)
-                        ->where('admg_id_empresa', $this->jirehEmpresa)
-                        ->where('admg_id_sucursal', $this->jirehSucursal);
-                }),
         ];
     }
     protected function getHeaderActions(): array
@@ -50,7 +36,7 @@ class ListProveedors extends ListRecords
             Action::make('cargarJireh')
                 ->label('Sincronizar con JIREH')
                 ->icon('heroicon-o-arrow-path')
-                ->visible(fn($livewire) => $livewire->activeTab === 'jireh')
+                ->visible(fn() => auth()->user()?->hasRole('ADMINISTRADOR') ?? false)
                 ->form([
                     Select::make('conexion')
                         ->label('Conexión')
@@ -295,10 +281,6 @@ class ListProveedors extends ListRecords
 
             $syncCount++;
         }
-
-        $this->jirehConexion = $conexionId;
-        $this->jirehEmpresa = (string) $empresaCode;
-        $this->jirehSucursal = (string) $sucursalCode;
 
         $this->resetTable();
 

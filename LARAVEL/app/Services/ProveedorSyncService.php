@@ -128,11 +128,9 @@ class ProveedorSyncService
                 $existeProveedor = DB::connection($conexionPgsql)->table('saeclpv')
                     ->where('clpv_cod_empr', $admg_empresa)
                     ->where('clpv_cod_sucu', $admg_sucursal)
-                    ->where('clpv_ruc_clpv', $identificacion)
-                    ->where('clv_con_clpv', $id_iden_clpv)
                     ->where('clpv_clopv_clpv', 'PV')
+                    ->where('clpv_ruc_clpv', $identificacion)
                     ->first();
-
                 $clpv_cod_clpv = $existeProveedor ? $existeProveedor->clpv_cod_clpv : null;
 
                 $proveedorData = [
