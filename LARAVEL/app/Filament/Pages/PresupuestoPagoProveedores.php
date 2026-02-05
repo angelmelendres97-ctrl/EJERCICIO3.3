@@ -276,6 +276,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
         }
 
         $abonosPendientes = SolicitudPagoResource::getAbonosPendientesSolicitudes($conexion, $empresas, $sucursales);
+        $facturasBloqueadasBorrador = SolicitudPagoResource::getFacturasBloqueadasBorrador($conexion, $empresas, $sucursales);
         $empresasDisponibles = SolicitudPagoResource::getEmpresasOptions($conexion);
         $sucursalesDisponibles = SolicitudPagoResource::getSucursalesOptions($conexion, $empresas);
         $proveedoresBase = SolicitudPagoResource::getProveedoresBase($conexion, $empresas, $sucursales);
@@ -321,7 +322,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
 
         $rows
             ->groupBy(fn($row) => $row->empresa . '|' . $row->sucursal . '|' . $row->proveedor_codigo)
-            ->each(function ($items) use (&$resultados, $conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes): void {
+            ->each(function ($items) use (&$resultados, $conexion, $conexionNombre, $empresasDisponibles, $sucursalesDisponibles, $proveedoresBase, $abonosPendientes, $facturasBloqueadasBorrador): void {
                 $facturas = $items
                     ->filter(fn($row) => (float) ($row->saldo_pendiente ?? 0) > 0)
                     ->sortBy('fecha_emision')
@@ -363,7 +364,7 @@ class PresupuestoPagoProveedores extends Page implements HasForms
                     $abonoPendiente = (float) ($abonosPendientes[$facturaKey] ?? 0);
                     $saldoPendiente = max(0, $saldoFactura - $abonoPendiente);
 
-                    if ($saldoPendiente <= 0) {
+                    if (isset($facturasBloqueadasBorrador[$facturaKey]) || $saldoPendiente <= 0) {
                         continue;
                     }
 
