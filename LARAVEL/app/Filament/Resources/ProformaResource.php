@@ -10,6 +10,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Enums\ActionsPosition;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Filament\Forms\Get;
@@ -525,6 +526,7 @@ class ProformaResource extends Resource
                     ->visible(fn() => self::userIsAdmin())
                     ->authorize(fn() => self::userIsAdmin()),
             ])
+            ->actionsPosition(ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()

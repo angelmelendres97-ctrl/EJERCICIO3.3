@@ -227,7 +227,7 @@ class CreateOrdenCompra extends CreateRecord
                 $productoLinea = $esServicio
                     ? ($detalle->dped_det_dped ?? $productoNombre)
                     : $productoNombre;
-                $unidadItem = $detalle->unid_abr_unid
+                $unidadItem = $detalle->unid_sigl_unid
                     ?? $detalle->unid_nom_unid
                     ?? 'UN';
 

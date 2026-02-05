@@ -826,6 +826,17 @@ class OrdenCompraResource extends Resource
                                                     $impuesto = round($data->prbo_iva_porc, 2);
                                                     $set('impuesto', $impuesto == 8.0 ? 18 : $impuesto);
                                                     $set('producto', $data->prod_nom_prod . ' (' . $state . ')');
+
+                                                    $unidad = DB::connection($connectionName)
+                                                        ->table('saeprod as p')
+                                                        ->leftJoin('saeunid as u', 'u.unid_cod_unid', '=', 'p.prod_cod_unid')
+                                                        ->where('p.prod_cod_empr', $amdg_id_empresa)
+                                                        ->where('p.prod_cod_sucu', $amdg_id_sucursal)
+                                                        ->where('p.prod_cod_prod', $state)
+                                                        ->select('u.unid_sigl_unid', 'u.unid_nom_unid')
+                                                        ->first();
+
+                                                    $set('unidad', $unidad?->unid_sigl_unid ?: ($unidad?->unid_nom_unid ?: null));
                                                 }
                                             }),
 
@@ -836,6 +847,7 @@ class OrdenCompraResource extends Resource
                                             ->required()
                                             ->live(onBlur: true)
                                             ->default(1)
+                                            ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
 
                                         Forms\Components\TextInput::make('costo')
