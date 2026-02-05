@@ -749,6 +749,7 @@ class SolicitudPagoResource extends Resource
         }
 
         $abonosPendientes = self::getAbonosPendientesSolicitudes($empresaId, $empresas, $sucursales);
+        $facturasBloqueadasBorrador = self::getFacturasBloqueadasBorrador($empresaId, $empresas, $sucursales);
 
         $empresaOptions  = self::getEmpresasOptions($empresaId);
         $sucursalOptions = self::getSucursalesOptions($empresaId, $empresas);
@@ -785,7 +786,7 @@ class SolicitudPagoResource extends Resource
                 $saldo = (float) ($r->saldo ?? 0);
                 $pendiente = (float) ($abonosPendientes[$k] ?? 0);
 
-                return ($saldo - $pendiente) <= 0;
+                return isset($facturasBloqueadasBorrador[$k]) || ($saldo - $pendiente) <= 0;
             })
             ->groupBy(fn($r) => $r->empr . '|' . $r->sucu . '|' . $r->provcod)
             ->map(function ($items, $key) use ($empresaOptions, $sucursalOptions) {
@@ -817,6 +818,7 @@ class SolicitudPagoResource extends Resource
         $proveedoresBase  = self::getProveedoresBase($empresaId, $empresas, $sucursales);
 
         $abonosPendientes = self::getAbonosPendientesSolicitudes($empresaId, $empresas, $sucursales);
+        $facturasBloqueadasBorrador = self::getFacturasBloqueadasBorrador($empresaId, $empresas, $sucursales);
 
         $agrupado = [];
 
@@ -875,6 +877,10 @@ class SolicitudPagoResource extends Resource
 
                         $keyDetalle = $empresaCodigo . '|' . $sucursalCodigo . '|' . $provCodigo . '|' . $numeroFactura;
                         $seleccionada = in_array($keyDetalle, $selectedKeys, true);
+
+                        if (isset($facturasBloqueadasBorrador[$keyDetalle]) && ! $seleccionada) {
+                            continue;
+                        }
 
                         $saldoFactura = (float) ($factura->saldo ?? 0);
                         $abonoPendiente = (float) ($abonosPendientes[$keyDetalle] ?? 0);
@@ -1028,6 +1034,30 @@ class SolicitudPagoResource extends Resource
             });
 
         return $abonos;
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    public static function getFacturasBloqueadasBorrador(int $empresaId, array $empresas, array $sucursales): array
+    {
+        return SolicitudPagoDetalle::query()
+            ->where('erp_conexion', (string) $empresaId)
+            ->when(! empty($empresas), fn($q) => $q->whereIn('erp_empresa_id', $empresas))
+            ->when(! empty($sucursales), fn($q) => $q->whereIn('erp_sucursal', $sucursales))
+            ->whereHas('solicitudPago', fn($q) => $q->where('estado', 'BORRADOR'))
+            ->get([
+                'erp_empresa_id',
+                'erp_sucursal',
+                'proveedor_codigo',
+                'numero_factura',
+                'erp_tabla',
+            ])
+            ->reject(fn(SolicitudPagoDetalle $detalle) => $detalle->isCompra())
+            ->mapWithKeys(fn(SolicitudPagoDetalle $detalle) => [
+                $detalle->erp_empresa_id . '|' . $detalle->erp_sucursal . '|' . $detalle->proveedor_codigo . '|' . $detalle->numero_factura => true,
+            ])
+            ->all();
     }
 
     /**
