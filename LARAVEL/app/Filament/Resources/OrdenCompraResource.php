@@ -829,9 +829,15 @@ class OrdenCompraResource extends Resource
 
                                                     $unidad = DB::connection($connectionName)
                                                         ->table('saeprod as p')
-                                                        ->leftJoin('saeunid as u', 'u.unid_cod_unid', '=', 'p.prod_cod_unid')
+                                                        ->join('saeprbo as prbo', function ($join) {
+                                                            $join->on('prbo.prbo_cod_prod', '=', 'p.prod_cod_prod')
+                                                                ->on('prbo.prbo_cod_empr', '=', 'p.prod_cod_empr')
+                                                                ->on('prbo.prbo_cod_sucu', '=', 'p.prod_cod_sucu');
+                                                        })
+                                                        ->leftJoin('saeunid as u', 'u.unid_cod_unid', '=', 'prbo.prbo_cod_unid')
                                                         ->where('p.prod_cod_empr', $amdg_id_empresa)
                                                         ->where('p.prod_cod_sucu', $amdg_id_sucursal)
+                                                        ->where('prbo.prbo_cod_bode', $id_bodega)
                                                         ->where('p.prod_cod_prod', $state)
                                                         ->select('u.unid_sigl_unid', 'u.unid_nom_unid')
                                                         ->first();
