@@ -811,6 +811,7 @@ class OrdenCompraResource extends Resource
                                                 $data = DB::connection($connectionName)
                                                     ->table('saeprod')
                                                     ->join('saeprbo', 'prbo_cod_prod', '=', 'prod_cod_prod')
+                                                    ->leftJoin('saeunid as u', 'u.unid_cod_unid', '=', 'prbo.prbo_cod_unid')
                                                     ->where('prod_cod_sucu', $amdg_id_sucursal)
                                                     ->where('prod_cod_empr', $amdg_id_empresa)
                                                     ->where('prbo_cod_empr', $amdg_id_empresa)
@@ -818,7 +819,7 @@ class OrdenCompraResource extends Resource
                                                     ->where('prbo_cod_bode', $id_bodega)
                                                     ->where('prbo_cod_prod', $state)
                                                     ->where('prod_cod_prod', $state)
-                                                    ->select('prbo_uco_prod', 'prbo_iva_porc', 'prod_nom_prod')
+                                                    ->select('prbo_uco_prod', 'prbo_iva_porc', 'prod_nom_prod', 'u.unid_sigl_unid', 'u.unid_nom_unid')
                                                     ->first();
 
                                                 if ($data) {
@@ -827,16 +828,7 @@ class OrdenCompraResource extends Resource
                                                     $set('impuesto', $impuesto == 8.0 ? 18 : $impuesto);
                                                     $set('producto', $data->prod_nom_prod . ' (' . $state . ')');
 
-                                                    $unidad = DB::connection($connectionName)
-                                                        ->table('saeprod as p')
-                                                        ->leftJoin('saeunid as u', 'u.unid_cod_unid', '=', 'p.prod_cod_unid')
-                                                        ->where('p.prod_cod_empr', $amdg_id_empresa)
-                                                        ->where('p.prod_cod_sucu', $amdg_id_sucursal)
-                                                        ->where('p.prod_cod_prod', $state)
-                                                        ->select('u.unid_sigl_unid', 'u.unid_nom_unid')
-                                                        ->first();
-
-                                                    $set('unidad', $unidad?->unid_sigl_unid ?: ($unidad?->unid_nom_unid ?: null));
+                                                    $set('unidad', $data->unid_sigl_unid ?: ($data->unid_nom_unid ?: null));
                                                 }
                                             }),
 
