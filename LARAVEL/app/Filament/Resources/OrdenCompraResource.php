@@ -851,7 +851,7 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 200)
                                             ->default(1)
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
@@ -859,14 +859,14 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('costo')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 200)
                                             ->prefix('$')
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
 
                                         Forms\Components\TextInput::make('descuento')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 200)
                                             ->default(0)
                                             ->prefix('$')
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
@@ -926,32 +926,13 @@ class OrdenCompraResource extends Resource
                             ->columns(1)
                             ->addActionLabel('Agregar Producto')
                             ->afterStateUpdated(function (Get $get, Set $set) {
-                                $detalles = $get('detalles');
-                                $subtotalGeneral = 0;
-                                $descuentoGeneral = 0;
-                                $impuestoGeneral = 0;
+                                $detalles = $get('detalles') ?? [];
+                                $totales = self::calculateTotals($detalles);
 
-                                foreach ($detalles as $detalle) {
-                                    $cantidad = floatval($detalle['cantidad'] ?? 0);
-                                    $costo = floatval($detalle['costo'] ?? 0);
-                                    $descuento = floatval($detalle['descuento'] ?? 0);
-                                    $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
-
-                                    $subtotalItem = $cantidad * $costo;
-                                    $baseNeta = max(0, $subtotalItem - $descuento);
-                                    $valorIva = $baseNeta * ($porcentajeIva / 100);
-
-                                    $subtotalGeneral += $subtotalItem;
-                                    $descuentoGeneral += $descuento;
-                                    $impuestoGeneral += $valorIva;
-                                }
-
-                                $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
-
-                                $set('subtotal', number_format($subtotalGeneral, 2, '.', ''));
-                                $set('total_descuento', number_format($descuentoGeneral, 2, '.', ''));
-                                $set('total_impuesto', number_format($impuestoGeneral, 2, '.', ''));
-                                $set('total', number_format($totalGeneral, 2, '.', ''));
+                                $set('subtotal', $totales['subtotal']);
+                                $set('total_descuento', $totales['total_descuento']);
+                                $set('total_impuesto', $totales['total_impuesto']);
+                                $set('total', $totales['total']);
                             })
                             ->live(),
                     ]),
