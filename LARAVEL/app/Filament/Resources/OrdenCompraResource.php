@@ -124,8 +124,21 @@ class OrdenCompraResource extends Resource
             'tarifas' => $tarifas,
             'subtotalGeneral' => $subtotalGeneral,
             'descuentoGeneral' => $descuentoGeneral,
+            'ivaGeneral' => $ivaGeneral,
             'totalGeneral' => $totalGeneral,
         ];
+    }
+
+    protected static function syncTotales(Get $get, Set $set): void
+    {
+        $detalles = $get('../../detalles') ?? $get('detalles') ?? [];
+        $resumen = self::buildResumenTotales($detalles);
+
+        $set('../../subtotal', number_format($resumen['subtotalGeneral'], 2, '.', ''));
+        $set('../../total_descuento', number_format($resumen['descuentoGeneral'], 2, '.', ''));
+        $set('../../total_impuesto', number_format($resumen['ivaGeneral'], 2, '.', ''));
+        $set('../../total', number_format($resumen['totalGeneral'], 2, '.', ''));
+        $set('../../resumen_totales', $resumen);
     }
 
     public static function normalizePedidosImportados(array|string|null $pedidos): array
@@ -851,7 +864,7 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('cantidad')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 300)
                                             ->default(1)
                                             ->helperText(fn(Get $get) => filled($get('unidad')) ? 'Unidad: ' . $get('unidad') : null)
                                             ->columnSpan(['default' => 12, 'lg' => 1]),
@@ -859,14 +872,14 @@ class OrdenCompraResource extends Resource
                                         Forms\Components\TextInput::make('costo')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 300)
                                             ->prefix('$')
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
 
                                         Forms\Components\TextInput::make('descuento')
                                             ->numeric()
                                             ->required()
-                                            ->live(onBlur: true)
+                                            ->live(debounce: 300)
                                             ->default(0)
                                             ->prefix('$')
                                             ->columnSpan(['default' => 12, 'lg' => 2]),
@@ -925,34 +938,7 @@ class OrdenCompraResource extends Resource
                             ->relationship()
                             ->columns(1)
                             ->addActionLabel('Agregar Producto')
-                            ->afterStateUpdated(function (Get $get, Set $set) {
-                                $detalles = $get('detalles');
-                                $subtotalGeneral = 0;
-                                $descuentoGeneral = 0;
-                                $impuestoGeneral = 0;
-
-                                foreach ($detalles as $detalle) {
-                                    $cantidad = floatval($detalle['cantidad'] ?? 0);
-                                    $costo = floatval($detalle['costo'] ?? 0);
-                                    $descuento = floatval($detalle['descuento'] ?? 0);
-                                    $porcentajeIva = floatval($detalle['impuesto'] ?? 0);
-
-                                    $subtotalItem = $cantidad * $costo;
-                                    $baseNeta = max(0, $subtotalItem - $descuento);
-                                    $valorIva = $baseNeta * ($porcentajeIva / 100);
-
-                                    $subtotalGeneral += $subtotalItem;
-                                    $descuentoGeneral += $descuento;
-                                    $impuestoGeneral += $valorIva;
-                                }
-
-                                $totalGeneral = ($subtotalGeneral - $descuentoGeneral) + $impuestoGeneral;
-
-                                $set('subtotal', number_format($subtotalGeneral, 2, '.', ''));
-                                $set('total_descuento', number_format($descuentoGeneral, 2, '.', ''));
-                                $set('total_impuesto', number_format($impuestoGeneral, 2, '.', ''));
-                                $set('total', number_format($totalGeneral, 2, '.', ''));
-                            })
+                            ->afterStateUpdated(fn(Get $get, Set $set) => self::syncTotales($get, $set))
                             ->live(),
                     ]),
 
@@ -961,12 +947,14 @@ class OrdenCompraResource extends Resource
                 Forms\Components\Hidden::make('total_descuento')->default(0),
                 Forms\Components\Hidden::make('total_impuesto')->default(0),
                 Forms\Components\Hidden::make('total')->default(0),
+                Forms\Components\Hidden::make('resumen_totales')
+                    ->dehydrated(false),
 
                 Section::make('Resumen de Totales')
                     ->schema([
                         View::make('resumen_totales')
                             ->view('filament.resources.orden-compra-resource.components.resumen-totales')
-                            ->viewData(fn(Get $get) => self::buildResumenTotales($get('detalles') ?? [])),
+                            ->viewData(fn(Get $get) => $get('resumen_totales') ?? self::buildResumenTotales($get('detalles') ?? [])),
                     ])->columns(1),
 
             ])->live()->extraAttributes([
