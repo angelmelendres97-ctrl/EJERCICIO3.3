@@ -131,15 +131,18 @@ class OrdenCompraResource extends Resource
 
     protected static function syncTotales(Get $get, Set $set): void
     {
-        $detalles = $get('../../detalles') ?? $get('detalles') ?? [];
-        $resumen = self::buildResumenTotales($detalles);
+        $detalles = $get('detalles') ?? $get('../../detalles') ?? [];
+        $resumen  = self::buildResumenTotales($detalles);
 
-        $set('../../subtotal', number_format($resumen['subtotalGeneral'], 2, '.', ''));
-        $set('../../total_descuento', number_format($resumen['descuentoGeneral'], 2, '.', ''));
-        $set('../../total_impuesto', number_format($resumen['ivaGeneral'], 2, '.', ''));
-        $set('../../total', number_format($resumen['totalGeneral'], 2, '.', ''));
-        $set('../../resumen_totales', $resumen);
+        $set('subtotal', number_format($resumen['subtotalGeneral'], 2, '.', ''));
+        $set('total_descuento', number_format($resumen['descuentoGeneral'], 2, '.', ''));
+        $set('total_impuesto', number_format($resumen['ivaGeneral'], 2, '.', ''));
+        $set('total', number_format($resumen['totalGeneral'], 2, '.', ''));
+
+        // Solo para pintar el resumen (no se guarda en BD)
+        $set('resumen_totales', $resumen);
     }
+
 
     public static function normalizePedidosImportados(array|string|null $pedidos): array
     {
